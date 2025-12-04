@@ -73,11 +73,7 @@ jobs:
           Write-Host "Installing libraries..."
           & $PythonExe -m pip install simpleaudio eunjeon --no-index --find-links=./wheelhouse --no-warn-script-location
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
-          
-          # [여기 추가!] tqdm 강제 재설치로 메타데이터(dist-info) 생성 보장
-          Write-Host "Forcing tqdm reinstall for metadata..."
-          & $PythonExe -m pip install tqdm --force-reinstall --no-warn-script-location
-          
+                    
           # 6. UniDic 다운로드
           Write-Host "Downloading UniDic Dictionary..."
           & $PythonExe -m unidic download
@@ -88,7 +84,6 @@ jobs:
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
           # 용량 다이어트 (__pycache__ 등 제거)
-          Remove-Item "$EnvName\Lib\site-packages\*.dist-info" -Recurse -Force -ErrorAction SilentlyContinue
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
 
       # [중요] Full 버전 압축 (초기 설치용)
