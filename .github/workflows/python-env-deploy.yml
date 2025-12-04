@@ -73,7 +73,11 @@ jobs:
           Write-Host "Installing libraries..."
           & $PythonExe -m pip install simpleaudio eunjeon --no-index --find-links=./wheelhouse --no-warn-script-location
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
-
+          
+          # [여기 추가!] tqdm 강제 재설치로 메타데이터(dist-info) 생성 보장
+          Write-Host "Forcing tqdm reinstall for metadata..."
+          & $PythonExe -m pip install tqdm --force-reinstall --no-warn-script-location
+          
           # 6. UniDic 다운로드
           Write-Host "Downloading UniDic Dictionary..."
           & $PythonExe -m unidic download
