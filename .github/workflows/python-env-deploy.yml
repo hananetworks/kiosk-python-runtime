@@ -1,9 +1,12 @@
 name: Deploy Python Environment
 
 on:
+  # 1. 태그가 푸시되면 자동 실행 (정식 배포)
   push:
     tags:
       - 'env-v*'
+  # 2. 깃허브 웹에서 버튼으로 수동 실행 가능 (테스트/긴급용)
+  workflow_dispatch:
 
 jobs:
   build-python-env:
@@ -15,87 +18,111 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # [1단계] 시스템 파이썬 세팅
+      # [캐시] requirements.txt가 안 바뀌면 다운로드 생략 (엄청 빨라짐)
+      - name: Cache Pip Packages
+        uses: actions/cache@v3
+        id: pip-cache
+        with:
+          path: |
+            ~/.cache/pip
+            wheelhouse
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Setup System Python (For Compilation)
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
           architecture: 'x64'
 
-      # [2단계] 휠 빌드
       - name: Build Wheels for C-Extensions
         shell: powershell
         run: |
-          New-Item -ItemType Directory -Path "wheelhouse" -Force
-          
-          Write-Host "Building difficult packages..."
+          if (-not (Test-Path "wheelhouse")) { New-Item -ItemType Directory -Path "wheelhouse" -Force }
+          # 캐시가 있어도 혹시 모르니 빌드 시도 (pip가 알아서 스킵함)
           python -m pip wheel simpleaudio eunjeon --wheel-dir=./wheelhouse
 
-      # [3단계] 순정 임베디드 파이썬 구축
       - name: Build Pure Isolated Python
         shell: powershell
         run: |
-          # --- 1. 작업 폴더 준비 ---
           $EnvName = "python-env"
           if (Test-Path $EnvName) { Remove-Item $EnvName -Recurse -Force }
           New-Item -ItemType Directory -Path $EnvName -Force
 
-          # --- 2. 순정 파이썬 다운로드 ---
+          # 1. 파이썬 임베디드 다운로드
           $Url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip"
           Invoke-WebRequest -Uri $Url -OutFile "python.zip"
           Expand-Archive -Path "python.zip" -DestinationPath $EnvName -Force
           Remove-Item "python.zip" -Force
 
-          # --- 3. 실행 파일 이름 변경 ---
-          $PythonExe = "$EnvName\kiosk_python.exe"
+          # 2. 실행 파일명 변경 (python.exe -> kiosk_python.exe)
           Rename-Item -Path "$EnvName\python.exe" -NewName "kiosk_python.exe"
+          $PythonExe = "$EnvName\kiosk_python.exe"
 
-          # --- 4. ._pth 파일 수정 ---
+          # 3. ._pth 파일 수정 (import site 활성화)
           $PthFile = "$EnvName\python311._pth"
           (Get-Content $PthFile) -replace '#import site', 'import site' | Set-Content $PthFile
           
-          # --- 5. pip 설치 ---
+          # 4. pip 설치
           Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          # --- 6. 라이브러리 설치 ---
-          Write-Host "Installing from pre-built wheels..."
-          
-          # (A) 컴파일해둔 휠 먼저 설치
+          # 5. 라이브러리 설치 (캐시 활용)
+          Write-Host "Installing libraries..."
           & $PythonExe -m pip install simpleaudio eunjeon --no-index --find-links=./wheelhouse --no-warn-script-location
-          
-          # (B) 나머지 라이브러리 설치
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
 
-          # [추가됨] UniDic 사전 데이터 다운로드 (딱 이것만 추가함)
+          # 6. UniDic 다운로드
           Write-Host "Downloading UniDic Dictionary..."
           & $PythonExe -m unidic download
 
-          # --- 7. PyWin32 DLL 복사 ---
+          # 7. PyWin32 DLL 복사 및 정리
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
           if (Test-Path $PyWin32Dir) {
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
+          # 용량 다이어트 (__pycache__ 등 제거)
+          Remove-Item "$EnvName\Lib\site-packages\*.dist-info" -Recurse -Force -ErrorAction SilentlyContinue
+          Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
 
-      - name: Zip python-env folder
-        run: 7z a python-env.zip python-env
+      # [중요] Full 버전 압축 (초기 설치용)
+      - name: Zip Full Environment
+        run: 7z a python-env-full.zip python-env
 
-      # [추가] 무결성 검증을 위한 SHA256 해시 파일 생성
-      - name: Generate SHA256 Hash
+      # [중요] Patch 버전 압축 (업데이트용 - 무거운거 뺌)
+      - name: Zip Patch Environment (Exclude Heavy Libs)
         shell: powershell
         run: |
-          $hash = (Get-FileHash python-env.zip -Algorithm SHA256).Hash
-          $hash | Out-File -Encoding ASCII hash.txt
-          Write-Host "Generated Hash: $hash"
+          Write-Host "Creating Light Patch..."
+          # 변경될 확률이 0%에 수렴하는 무거운 폴더들을 제외
+          7z a python-env-patch.zip python-env `
+            -xr!python-env\Lib\site-packages\torch `
+            -xr!python-env\Lib\site-packages\torchaudio `
+            -xr!python-env\Lib\site-packages\torchvision `
+            -xr!python-env\Lib\site-packages\nvidia `
+            -xr!python-env\Lib\site-packages\scipy `
+            -xr!python-env\Lib\site-packages\numpy `
+            -xr!python-env\Lib\site-packages\transformers `
+            -mx=9
 
-      # [수정] 업로드할 파일 목록에 hash.txt 추가
+      - name: Generate SHA256 Hashes
+        shell: powershell
+        run: |
+          $hashFull = (Get-FileHash python-env-full.zip -Algorithm SHA256).Hash
+          $hashPatch = (Get-FileHash python-env-patch.zip -Algorithm SHA256).Hash
+          "Full: $hashFull" | Out-File -Encoding ASCII hash.txt -Append
+          "Patch: $hashPatch" | Out-File -Encoding ASCII hash.txt -Append
+
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            python-env.zip
+            python-env-full.zip
+            python-env-patch.zip
             hash.txt
-          prerelease: true
+          prerelease: false
+          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
