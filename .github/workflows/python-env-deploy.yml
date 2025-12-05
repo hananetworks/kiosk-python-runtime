@@ -1,11 +1,9 @@
 name: Deploy Python Environment
 
 on:
-  # 1. 태그가 푸시되면 자동 실행 (정식 배포)
   push:
     tags:
       - 'env-v*'
-  # 2. 깃허브 웹에서 버튼으로 수동 실행 가능 (테스트/긴급용)
   workflow_dispatch:
 
 jobs:
@@ -18,7 +16,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # [캐시] requirements.txt가 안 바뀌면 다운로드 생략 (엄청 빨라짐)
+      # [캐시] requirements.txt가 안 바뀌면 다운로드 생략
       - name: Cache Pip Packages
         uses: actions/cache@v3
         id: pip-cache
@@ -40,7 +38,6 @@ jobs:
         shell: powershell
         run: |
           if (-not (Test-Path "wheelhouse")) { New-Item -ItemType Directory -Path "wheelhouse" -Force }
-          # 캐시가 있어도 혹시 모르니 빌드 시도 (pip가 알아서 스킵함)
           python -m pip wheel simpleaudio eunjeon --wheel-dir=./wheelhouse
 
       - name: Build Pure Isolated Python
@@ -56,11 +53,11 @@ jobs:
           Expand-Archive -Path "python.zip" -DestinationPath $EnvName -Force
           Remove-Item "python.zip" -Force
 
-          # 2. 실행 파일명 변경 (python.exe -> kiosk_python.exe)
+          # 2. 실행 파일명 변경
           Rename-Item -Path "$EnvName\python.exe" -NewName "kiosk_python.exe"
           $PythonExe = "$EnvName\kiosk_python.exe"
 
-          # 3. ._pth 파일 수정 (import site 활성화)
+          # 3. ._pth 파일 수정
           $PthFile = "$EnvName\python311._pth"
           (Get-Content $PthFile) -replace '#import site', 'import site' | Set-Content $PthFile
           
@@ -69,12 +66,12 @@ jobs:
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          # 5. 라이브러리 설치 (캐시 활용)
+          # 5. 라이브러리 설치
           Write-Host "Installing libraries..."
           & $PythonExe -m pip install simpleaudio eunjeon --no-index --find-links=./wheelhouse --no-warn-script-location
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
           
-          # 6. UniDic 다운로드
+          # 6. UniDic 다운로드 (이게 용량 엄청 큽니다)
           Write-Host "Downloading UniDic Dictionary..."
           & $PythonExe -m unidic download
 
@@ -83,38 +80,64 @@ jobs:
           if (Test-Path $PyWin32Dir) {
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
-          # 용량 다이어트 (__pycache__ 등 제거)
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
 
-      # [추가 1] Manifest 생성을 위해 Node.js 설치 (JS 스크립트 실행용)
+      # [Manifest 준비] Node.js 설치
       - name: Setup Node.js for Manifest
         uses: actions/setup-node@v3
         with:
           node-version: 20
 
-      # [추가 2] Manifest 생성 실행 (압축 전에 해야 함)
+      # [Manifest 생성] 삭제하기 전에 전체 파일 기준으로 해시 생성
       - name: Generate Manifest
         run: node scripts/generate_manifest.js
 
-      # [중요] Full 버전 압축 (초기 설치용)
+      # [1] Full 버전 압축 (원본 그대로)
       - name: Zip Full Environment
-        run: 7z a python-env-full.zip python-env
+        run: 7z a -mx=9 python-env-full.zip python-env
 
-      # [중요] Patch 버전 압축 (업데이트용 - 무거운거 뺌)
-      - name: Zip Patch Environment (Exclude Heavy Libs)
+      # [2] Patch 생성을 위한 강력 다이어트 (물리적 삭제)
+      - name: Slim down for Patch
         shell: powershell
         run: |
-          Write-Host "Creating Light Patch..."
-          # 변경될 확률이 0%에 수렴하는 무거운 폴더들을 제외
-          7z a python-env-patch.zip python-env `
-            -xr!python-env\Lib\site-packages\torch `
-            -xr!python-env\Lib\site-packages\torchaudio `
-            -xr!python-env\Lib\site-packages\torchvision `
-            -xr!python-env\Lib\site-packages\nvidia `
-            -xr!python-env\Lib\site-packages\scipy `
-            -xr!python-env\Lib\site-packages\numpy `
-            -xr!python-env\Lib\site-packages\transformers `
-            -mx=9
+          Write-Host "🔥 Removing heavy libraries for Patch version..."
+          $site_packages = "python-env\Lib\site-packages"
+
+          # 1. AI & Deep Learning (가장 무거움)
+          if (Test-Path "$site_packages\torch") { Remove-Item "$site_packages\torch" -Recurse -Force }
+          if (Test-Path "$site_packages\torchaudio") { Remove-Item "$site_packages\torchaudio" -Recurse -Force }
+          if (Test-Path "$site_packages\torchvision") { Remove-Item "$site_packages\torchvision" -Recurse -Force }
+          # nvidia 폴더가 수백MB 차지함 (CUDA 관련)
+          if (Test-Path "$site_packages\nvidia") { Remove-Item "$site_packages\nvidia" -Recurse -Force }
+          
+          # Transformers & HF
+          if (Test-Path "$site_packages\transformers") { Remove-Item "$site_packages\transformers" -Recurse -Force }
+          if (Test-Path "$site_packages\tokenizers") { Remove-Item "$site_packages\tokenizers" -Recurse -Force }
+          if (Test-Path "$site_packages\huggingface_hub") { Remove-Item "$site_packages\huggingface_hub" -Recurse -Force }
+
+          # 2. 데이터 과학 & 사전 데이터
+          if (Test-Path "$site_packages\numpy") { Remove-Item "$site_packages\numpy" -Recurse -Force }
+          if (Test-Path "$site_packages\pandas") { Remove-Item "$site_packages\pandas" -Recurse -Force }
+          if (Test-Path "$site_packages\scipy") { Remove-Item "$site_packages\scipy" -Recurse -Force }
+          if (Test-Path "$site_packages\scikit_learn") { Remove-Item "$site_packages\scikit_learn" -Recurse -Force }
+          if (Test-Path "$site_packages\sklearn") { Remove-Item "$site_packages\sklearn" -Recurse -Force }
+          
+          # UniDic 사전 데이터 (엄청 큼)
+          if (Test-Path "$site_packages\unidic") { Remove-Item "$site_packages\unidic" -Recurse -Force }
+          
+          # 3. 기타 무거운 녀석들
+          if (Test-Path "$site_packages\PIL") { Remove-Item "$site_packages\PIL" -Recurse -Force }
+          if (Test-Path "$site_packages\matplotlib") { Remove-Item "$site_packages\matplotlib" -Recurse -Force }
+          
+          # 4. 찌꺼기 제거
+          Get-ChildItem -Path "python-env" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
+          Get-ChildItem -Path "python-env" -Include "*.dist-info" -Recurse -Directory | Remove-Item -Recurse -Force
+          
+          Write-Host "✅ Cleanup complete. Ready to zip patch."
+
+      # [3] Patch 버전 압축 (이제 진짜 가벼움)
+      - name: Zip Patch Environment
+        run: 7z a -mx=9 python-env-patch.zip python-env
 
       - name: Generate SHA256 Hashes
         shell: powershell
