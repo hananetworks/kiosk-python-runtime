@@ -73,7 +73,7 @@ jobs:
           Write-Host "Installing libraries..."
           & $PythonExe -m pip install simpleaudio eunjeon --no-index --find-links=./wheelhouse --no-warn-script-location
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
-                    
+          
           # 6. UniDic 다운로드
           Write-Host "Downloading UniDic Dictionary..."
           & $PythonExe -m unidic download
@@ -85,6 +85,16 @@ jobs:
           }
           # 용량 다이어트 (__pycache__ 등 제거)
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
+
+      # [추가 1] Manifest 생성을 위해 Node.js 설치 (JS 스크립트 실행용)
+      - name: Setup Node.js for Manifest
+        uses: actions/setup-node@v3
+        with:
+          node-version: 20
+
+      # [추가 2] Manifest 생성 실행 (압축 전에 해야 함)
+      - name: Generate Manifest
+        run: node scripts/generate_manifest.js
 
       # [중요] Full 버전 압축 (초기 설치용)
       - name: Zip Full Environment
@@ -120,6 +130,7 @@ jobs:
           files: |
             python-env-full.zip
             python-env-patch.zip
+            manifest.json
             hash.txt
           prerelease: false
           make_latest: true
