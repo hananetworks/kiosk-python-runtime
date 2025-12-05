@@ -96,44 +96,43 @@ jobs:
       - name: Zip Full Environment
         run: 7z a -mx=9 python-env-full.zip python-env
 
-      # [2] Patch 생성을 위한 강력 다이어트 (물리적 삭제)
+      # [2] Patch 생성을 위한 강력 다이어트 (안전한 영문 버전)
       - name: Slim down for Patch
         shell: powershell
         run: |
-          Write-Host "🔥 Removing heavy libraries for Patch version..."
-          $site_packages = "python-env\Lib\site-packages"
+          Write-Host "Removing heavy libraries for Patch version..."
+          $base = "python-env\Lib\site-packages"
 
-          # 1. AI & Deep Learning (가장 무거움)
-          if (Test-Path "$site_packages\torch") { Remove-Item "$site_packages\torch" -Recurse -Force }
-          if (Test-Path "$site_packages\torchaudio") { Remove-Item "$site_packages\torchaudio" -Recurse -Force }
-          if (Test-Path "$site_packages\torchvision") { Remove-Item "$site_packages\torchvision" -Recurse -Force }
-          # nvidia 폴더가 수백MB 차지함 (CUDA 관련)
-          if (Test-Path "$site_packages\nvidia") { Remove-Item "$site_packages\nvidia" -Recurse -Force }
-          
-          # Transformers & HF
-          if (Test-Path "$site_packages\transformers") { Remove-Item "$site_packages\transformers" -Recurse -Force }
-          if (Test-Path "$site_packages\tokenizers") { Remove-Item "$site_packages\tokenizers" -Recurse -Force }
-          if (Test-Path "$site_packages\huggingface_hub") { Remove-Item "$site_packages\huggingface_hub" -Recurse -Force }
+          # [중요] ErrorAction SilentlyContinue 옵션 필수 (없으면 에러 무시하고 진행)
 
-          # 2. 데이터 과학 & 사전 데이터
-          if (Test-Path "$site_packages\numpy") { Remove-Item "$site_packages\numpy" -Recurse -Force }
-          if (Test-Path "$site_packages\pandas") { Remove-Item "$site_packages\pandas" -Recurse -Force }
-          if (Test-Path "$site_packages\scipy") { Remove-Item "$site_packages\scipy" -Recurse -Force }
-          if (Test-Path "$site_packages\scikit_learn") { Remove-Item "$site_packages\scikit_learn" -Recurse -Force }
-          if (Test-Path "$site_packages\sklearn") { Remove-Item "$site_packages\sklearn" -Recurse -Force }
+          # 1. AI and CUDA libs (Heavy)
+          Remove-Item "$base\torch" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\torchaudio" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\torchvision" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\nvidia" -Recurse -Force -ErrorAction SilentlyContinue
           
-          # UniDic 사전 데이터 (엄청 큼)
-          if (Test-Path "$site_packages\unidic") { Remove-Item "$site_packages\unidic" -Recurse -Force }
+          # 2. Transformers and NLP
+          Remove-Item "$base\transformers" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\tokenizers" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\huggingface_hub" -Recurse -Force -ErrorAction SilentlyContinue
           
-          # 3. 기타 무거운 녀석들
-          if (Test-Path "$site_packages\PIL") { Remove-Item "$site_packages\PIL" -Recurse -Force }
-          if (Test-Path "$site_packages\matplotlib") { Remove-Item "$site_packages\matplotlib" -Recurse -Force }
+          # 3. Data Science and Dictionaries
+          Remove-Item "$base\numpy" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\pandas" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\scipy" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\scikit_learn" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\sklearn" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\unidic" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\meacab_ko_dic" -Recurse -Force -ErrorAction SilentlyContinue
+
+          # 4. Others
+          Remove-Item "$base\PIL" -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item "$base\matplotlib" -Recurse -Force -ErrorAction SilentlyContinue
           
-          # 4. 찌꺼기 제거
-          Get-ChildItem -Path "python-env" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
-          Get-ChildItem -Path "python-env" -Include "*.dist-info" -Recurse -Directory | Remove-Item -Recurse -Force
+          # 5. Cache Cleanup
+          Get-ChildItem -Path "python-env" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
           
-          Write-Host "✅ Cleanup complete. Ready to zip patch."
+          Write-Host "Cleanup complete."
 
       # [3] Patch 버전 압축 (이제 진짜 가벼움)
       - name: Zip Patch Environment
