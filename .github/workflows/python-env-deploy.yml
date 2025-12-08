@@ -15,8 +15,7 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-  19s
-Warning: Unexpected input(s) 'make_latest', valid inputs are ['body', 'body_path', 'name', 'tag_name', 'draft', 'prerelease', 'files', 'fail_on_unmatched_files', 'repository', 'token', 'target_commitish', 'discussion_category_name', 'generate_release_notes', 'append_body']
+
       - name: Cache Pip Packages
         uses: actions/cache@v3
         id: pip-cache
@@ -165,7 +164,7 @@ Warning: Unexpected input(s) 'make_latest', valid inputs are ['body', 'body_path
           "Patch: $hashPatch" | Out-File -Encoding ASCII hash.txt -Append
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v1
         with:
           files: |
             python-env-full.zip
