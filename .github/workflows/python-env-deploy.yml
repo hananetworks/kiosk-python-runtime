@@ -28,17 +28,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Setup System Python (For Compilation)
+      - name: Setup System Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
           architecture: 'x64'
 
-      - name: Build Wheels for C-Extensions
-        shell: powershell
-        run: |
-          if (-not (Test-Path "wheelhouse")) { New-Item -ItemType Directory -Path "wheelhouse" -Force }
-          python -m pip wheel simpleaudio eunjeon --wheel-dir=./wheelhouse
+      # [삭제됨] Build Wheels for C-Extensions (simpleaudio 제거로 불필요)
 
       - name: Build Pure Isolated Python
         shell: powershell
@@ -66,12 +62,11 @@ jobs:
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          # 5. 라이브러리 설치
+          # 5. 라이브러리 설치 (simpleaudio wheel 빌드 과정 제거됨)
           Write-Host "Installing libraries..."
-          & $PythonExe -m pip install simpleaudio eunjeon --no-index --find-links=./wheelhouse --no-warn-script-location
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
           
-          # 6. UniDic 다운로드 (이게 용량 엄청 큽니다)
+          # 6. UniDic 다운로드
           Write-Host "Downloading UniDic Dictionary..."
           & $PythonExe -m unidic download
 
@@ -96,16 +91,16 @@ jobs:
       - name: Zip Full Environment
         run: 7z a -mx=9 python-env-full.zip python-env
 
-      # [2] Patch 생성을 위한 강력 다이어트 (안전한 영문 버전)
+      # [2] Patch 생성을 위한 강력 다이어트 (안전한 영문 버전 + 강제 삭제)
       - name: Slim down for Patch
         shell: powershell
         run: |
           Write-Host "Removing heavy libraries for Patch version..."
           $base = "python-env\Lib\site-packages"
 
-          # [중요] ErrorAction SilentlyContinue 옵션 필수 (없으면 에러 무시하고 진행)
+          # [중요] ErrorAction SilentlyContinue: 없으면 말고, 있으면 지운다. (에러 발생 안 함)
 
-          # 1. AI and CUDA libs (Heavy)
+          # 1. AI and CUDA libs (The heaviest parts)
           Remove-Item "$base\torch" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "$base\torchaudio" -Recurse -Force -ErrorAction SilentlyContinue
           Remove-Item "$base\torchvision" -Recurse -Force -ErrorAction SilentlyContinue
