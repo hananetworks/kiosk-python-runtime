@@ -1,59 +1,18 @@
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
 
-// GitHub Actions 워크플로우에서 생성되는 폴더명과 일치해야 함
-const TARGET_DIR = path.join(__dirname, '../python-env');
+// GitHub Actions 워크플로우 등에서 생성되는 결과물 이름
 const OUTPUT_FILE = 'manifest.json';
 
-function getFileHash(filePath) {
-    try {
-        const buffer = fs.readFileSync(filePath);
-        return crypto.createHash('sha256').update(buffer).digest('hex');
-    } catch (err) { return null; }
-}
+console.log(`🔍 Manifest(메타데이터) 생성 시작...`);
 
-function walkDir(dir, fileList = []) {
-    if (!fs.existsSync(dir)) return fileList;
-    const files = fs.readdirSync(dir);
-    files.forEach(file => {
-        const filePath = path.join(dir, file);
-        if (fs.statSync(filePath).isDirectory()) {
-            walkDir(filePath, fileList);
-        } else {
-            const relativePath = path.relative(TARGET_DIR, filePath).replace(/\\/g, '/');
-            fileList.push({ path: relativePath, hash: getFileHash(filePath) });
-        }
-    });
-    return fileList;
-}
-
-console.log(`🔍 Manifest 생성 시작... (Target: ${TARGET_DIR})`);
-
-if (!fs.existsSync(TARGET_DIR)) {
-    console.error(`❌ 오류: ${TARGET_DIR} 폴더가 없습니다. 빌드 스크립트 순서를 확인하세요.`);
-    process.exit(1);
-}
-
-// [핵심] 버전 변경을 감지할 '중요 파일' 목록
-const CRITICAL_FILES = [
-    'kiosk_python.exe',
-    'Lib/site-packages/torch/version.py',
-    'Lib/site-packages/numpy/version.py',
-    'requirements.txt'
-];
-
-const allFiles = walkDir(TARGET_DIR);
-const criticalHashes = {};
-
-CRITICAL_FILES.forEach(critPath => {
-    const found = allFiles.find(f => f.path.endsWith(critPath));
-    if (found && found.hash) criticalHashes[critPath] = found.hash;
-});
+// 이제 복잡한 파일 해시 비교는 필요 없습니다. (HDiffPatch가 다 알아서 함)
+// 단순히 버전 관리/디버깅 용도로 언제 빌드되었는지만 남깁니다.
 
 const manifest = {
+    buildSystem: "HDiffPatch-Binary-Strategy",
     generatedAt: new Date().toISOString(),
-    criticalHashes: criticalHashes
+    description: "이 파일은 빌드 시점을 기록하기 위한 메타데이터입니다. 업데이트 로직에는 관여하지 않습니다."
 };
 
 fs.writeFileSync(OUTPUT_FILE, JSON.stringify(manifest, null, 2));

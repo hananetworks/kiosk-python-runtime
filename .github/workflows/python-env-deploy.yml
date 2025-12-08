@@ -1,4 +1,4 @@
-name: Deploy Python Environment
+name: Deploy Python Environment (Diff Patch)
 
 on:
   push:
@@ -15,6 +15,19 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+
+      # ----------------------------------------------------------------
+      # [NEW] 1. 패치 생성 도구(HDiffPatch) 준비
+      # ----------------------------------------------------------------
+      - name: Download HDiffPatch Tool
+        shell: powershell
+        run: |
+          $toolUrl = "https://github.com/sisong/HDiffPatch/releases/latest/download/win64_release_HDiffPatch.zip"
+          Invoke-WebRequest -Uri $toolUrl -OutFile "hdiff_tool.zip"
+          Expand-Archive -Path "hdiff_tool.zip" -DestinationPath "hdiff_tools" -Force
+          # 작업하기 편하게 실행 파일을 루트로 이동
+          Copy-Item "hdiff_tools\*\hdiffz.exe" .
+          Copy-Item "hdiff_tools\*\hpatchz.exe" .
 
       - name: Cache Pip Packages
         uses: actions/cache@v3
@@ -33,8 +46,9 @@ jobs:
           python-version: '3.11'
           architecture: 'x64'
 
-      # [삭제됨] Build Wheels for C-Extensions (에러 원인이므로 삭제)
-
+      # ----------------------------------------------------------------
+      # 2. 파이썬 환경 빌드 (기존과 동일하지만, 삭제 로직 없음)
+      # ----------------------------------------------------------------
       - name: Build Pure Isolated Python
         shell: powershell
         run: |
@@ -42,133 +56,118 @@ jobs:
           if (Test-Path $EnvName) { Remove-Item $EnvName -Recurse -Force }
           New-Item -ItemType Directory -Path $EnvName -Force
 
-          # 1. 파이썬 임베디드 다운로드
+          # 파이썬 임베디드 다운로드
           $Url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip"
           Invoke-WebRequest -Uri $Url -OutFile "python.zip"
           Expand-Archive -Path "python.zip" -DestinationPath $EnvName -Force
           Remove-Item "python.zip" -Force
 
-          # 2. 실행 파일명 변경
+          # 실행 파일명 변경
           Rename-Item -Path "$EnvName\python.exe" -NewName "kiosk_python.exe"
           $PythonExe = "$EnvName\kiosk_python.exe"
 
-          # 3. ._pth 파일 수정
+          # ._pth 파일 수정
           $PthFile = "$EnvName\python311._pth"
           (Get-Content $PthFile) -replace '#import site', 'import site' | Set-Content $PthFile
           
-          # 4. pip 설치
+          # pip 설치
           Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          # 5. 라이브러리 설치 (wheel 빌드 과정 제거됨)
+          # 라이브러리 설치
           Write-Host "Installing libraries..."
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
           
-          # 6. UniDic 다운로드
+          # UniDic 다운로드
           Write-Host "Downloading UniDic Dictionary..."
           & $PythonExe -m unidic download
 
-          # 7. PyWin32 DLL 복사 및 정리
+          # PyWin32 DLL 복사 및 정리
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
           if (Test-Path $PyWin32Dir) {
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
+          # 캐시 제거
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
+          Get-ChildItem -Path "$EnvName" -Include "*.dist-info" -Recurse -Directory | Remove-Item -Recurse -Force
 
-      # [Manifest 준비] Node.js 설치
+      # ----------------------------------------------------------------
+      # 3. Full 버전 압축 & Manifest (Slim Down 과정은 삭제됨)
+      # ----------------------------------------------------------------
       - name: Setup Node.js for Manifest
         uses: actions/setup-node@v3
         with:
           node-version: 20
 
-      # [Manifest 생성] 삭제하기 전에 전체 파일 기준으로 해시 생성
       - name: Generate Manifest
         run: node scripts/generate_manifest.js
 
-      # [1] Full 버전 압축 (원본 그대로)
-      - name: Zip Full Environment
+      - name: Zip NEW Full Environment
         run: 7z a -mx=9 python-env-full.zip python-env
 
-      # [2] Patch 생성을 위한 강력 다이어트 (안전한 영문 버전 + 강제 삭제)
-      - name: Slim down for Patch
+      # ----------------------------------------------------------------
+      # [NEW] 4. 이전 버전(Latest Release) 다운로드 (비교 대상)
+      # ----------------------------------------------------------------
+      - name: Download Previous Release Asset
+        uses: robinraju/release-downloader@v1.8
+        continue-on-error: true  # 첫 배포거나 이전 버전 없으면 패스
+        with:
+          latest: true
+          fileName: "python-env-full.zip"
+          out-file-path: "previous_release"
+
+      # ----------------------------------------------------------------
+      # [NEW] 5. 바이너리 Diff(패치) 생성 (핵심 로직)
+      # ----------------------------------------------------------------
+      - name: Generate HDiff Patch
+        id: diff
         shell: powershell
         run: |
-          Write-Host "Removing heavy libraries for Patch version..."
-          $base = "python-env\Lib\site-packages"
-          
-          # [기본] 에러 무시 옵션
-          $ea = "SilentlyContinue"
-          
-          # ---------------------------------------------------------
-          # 1. AI & Deep Learning (기존 삭제 목록)
-          # ---------------------------------------------------------
-          Remove-Item "$base\torch" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\torchaudio" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\torchvision" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\nvidia" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\transformers" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\tokenizers" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\huggingface_hub" -Recurse -Force -ErrorAction $ea
-          
-          # ---------------------------------------------------------
-          # 2. 클라우드 SDK & 통신 (여기가 391MB의 주범!)
-          # ---------------------------------------------------------
-          # AWS / NCP 관련 (엄청 큼)
-          Remove-Item "$base\boto3" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\botocore" -Recurse -Force -ErrorAction $ea
-          # Google Cloud 관련
-          Remove-Item "$base\google" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\googleapis" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\grpc" -Recurse -Force -ErrorAction $ea
-          
-          # ---------------------------------------------------------
-          # 3. 데이터 과학 & 사전 (안 바뀌는 무거운 놈들)
-          # ---------------------------------------------------------
-          Remove-Item "$base\numpy" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\pandas" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\scipy" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\scikit_learn" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\sklearn" -Recurse -Force -ErrorAction $ea
-          # 사전 데이터
-          Remove-Item "$base\unidic" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\meacab_ko_dic" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\mecab" -Recurse -Force -ErrorAction $ea
-          
-          # ---------------------------------------------------------
-          # 4. 기타 및 런타임에 불필요한 도구
-          # ---------------------------------------------------------
-          Remove-Item "$base\PIL" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\matplotlib" -Recurse -Force -ErrorAction $ea
-          # 설치 도구 제거 (실행할 땐 필요 없음)
-          Remove-Item "$base\pip" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\setuptools" -Recurse -Force -ErrorAction $ea
-          Remove-Item "$base\wheel" -Recurse -Force -ErrorAction $ea
-          
-          # 5. 캐시 및 메타데이터 제거
-          Get-ChildItem -Path "python-env" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force -ErrorAction $ea
-          Get-ChildItem -Path "python-env" -Include "*.dist-info" -Recurse -Directory | Remove-Item -Recurse -Force -ErrorAction $ea
-          
-          Write-Host "Cleanup complete."
+          $OldFile = "previous_release\python-env-full.zip"
+          $NewFile = "python-env-full.zip"
+          $PatchFile = "patch.hdiff"
 
-      # [3] Patch 버전 압축 (이제 진짜 가벼움)
-      - name: Zip Patch Environment
-        run: 7z a -mx=9 python-env-patch.zip python-env
+          if (Test-Path $OldFile) {
+            Write-Host "Found previous version. Generating diff patch..."
+            # -c-zstd : zstd 압축 알고리즘 사용 (빠르고 강력함)
+            # -f : 강제 덮어쓰기
+            ./hdiffz.exe -c-zstd -f $OldFile $NewFile $PatchFile
+          
+            if (Test-Path $PatchFile) {
+               $Size = (Get-Item $PatchFile).Length / 1MB
+               Write-Host "Patch generated successfully! Size: $("{0:N2}" -f $Size) MB"
+               echo "PATCH_EXISTS=true" >> $env:GITHUB_ENV
+            } else {
+               Write-Host "Failed to generate patch file."
+               echo "PATCH_EXISTS=false" >> $env:GITHUB_ENV
+            }
+          } else {
+            Write-Host "No previous version found. Skipping patch generation."
+            echo "PATCH_EXISTS=false" >> $env:GITHUB_ENV
+          }
 
+      # ----------------------------------------------------------------
+      # 6. 해시 생성 및 업로드
+      # ----------------------------------------------------------------
       - name: Generate SHA256 Hashes
         shell: powershell
         run: |
           $hashFull = (Get-FileHash python-env-full.zip -Algorithm SHA256).Hash
-          $hashPatch = (Get-FileHash python-env-patch.zip -Algorithm SHA256).Hash
           "Full: $hashFull" | Out-File -Encoding ASCII hash.txt -Append
-          "Patch: $hashPatch" | Out-File -Encoding ASCII hash.txt -Append
+          
+          if ($env:PATCH_EXISTS -eq 'true') {
+            $hashPatch = (Get-FileHash patch.hdiff -Algorithm SHA256).Hash
+            "Patch: $hashPatch" | Out-File -Encoding ASCII hash.txt -Append
+          }
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
             python-env-full.zip
-            python-env-patch.zip
+            patch.hdiff
+            hpatchz.exe
             manifest.json
             hash.txt
           prerelease: false
