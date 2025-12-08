@@ -31,7 +31,7 @@ jobs:
               exit 1
           }
 
-          # 2. 'win64'가 포함된 에셋 URL 찾기 (동적 탐색)
+          # 2. 'win64'가 포함된 에셋 URL 찾기 (버전 번호가 바껴도 찾을 수 있음)
           $asset = $release.assets | Where-Object { $_.name -like "*win64*" }
           
           if ($null -eq $asset) {
@@ -46,7 +46,7 @@ jobs:
           # 4. 압축 해제 및 파일 이동
           Expand-Archive -Path "hdiff_tool.zip" -DestinationPath "hdiff_tools" -Force
           
-          # 폴더 구조가 바뀔 수 있으니 재귀적으로 찾아서 복사
+          # 폴더 구조가 바뀔 수 있으니 재귀적으로 exe를 찾아서 루트로 복사
           Get-ChildItem -Path "hdiff_tools" -Recurse -Filter "hdiffz.exe" | Copy-Item -Destination . -Force
           Get-ChildItem -Path "hdiff_tools" -Recurse -Filter "hpatchz.exe" | Copy-Item -Destination . -Force
           
