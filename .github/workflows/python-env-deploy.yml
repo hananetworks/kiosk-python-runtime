@@ -17,49 +17,49 @@ jobs:
         uses: actions/checkout@v3
 
       # ----------------------------------------------------------------
-      # [수정됨] 1. 패치 생성 도구(HDiffPatch) 준비 (API로 주소 찾기)
+      # [FIXED] 1. HDiffPatch Tool Setup (English Logs to prevent Encoding Errors)
       # ----------------------------------------------------------------
       - name: Download HDiffPatch Tool
         shell: powershell
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 1. GitHub API로 최신 릴리즈 정보 조회 (인증 헤더 추가로 제한 방지)
+          # 1. Fetch latest release info via GitHub API
           $headers = @{ Authorization = "Bearer $env:GH_TOKEN" }
           $apiUrl = "https://api.github.com/repos/sisong/HDiffPatch/releases/latest"
           
           try {
               $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers
           } catch {
-              Write-Error "릴리즈 정보를 가져오지 못했습니다: $_"
+              Write-Error "Failed to fetch release info: $_"
               exit 1
           }
 
-          # 2. 'win64'가 포함된 zip 파일 찾기 (버전 번호가 바뀌어도 찾음)
+          # 2. Find asset containing 'win64' and '.zip'
           $asset = $release.assets | Where-Object { $_.name -like "*win64*.zip" }
           
           if ($null -eq $asset) {
-              Write-Error "HDiffPatch 릴리즈에서 win64용 파일을 찾을 수 없습니다."
+              Write-Error "Could not find win64 asset in HDiffPatch release."
               exit 1
           }
 
-          # 3. 다운로드
+          # 3. Download
           $downloadUrl = $asset.browser_download_url
-          Write-Host "다운로드 주소 발견: $downloadUrl"
+          Write-Host "Download URL found: $downloadUrl"
           Invoke-WebRequest -Uri $downloadUrl -OutFile "hdiff_tool.zip"
           
-          # 4. 압축 해제 및 도구 꺼내기
+          # 4. Extract and Install
           Expand-Archive -Path "hdiff_tool.zip" -DestinationPath "hdiff_tools" -Force
           
-          # 압축 풀린 폴더 안 어딘가에 있는 실행 파일들을 루트로 복사
+          # Move executables to root
           Get-ChildItem -Path "hdiff_tools" -Recurse -Filter "hdiffz.exe" | Copy-Item -Destination . -Force
           Get-ChildItem -Path "hdiff_tools" -Recurse -Filter "hpatchz.exe" | Copy-Item -Destination . -Force
           
           if (-not (Test-Path "hdiffz.exe")) {
-              Write-Error "hdiffz.exe 파일을 찾지 못했습니다."
+              Write-Error "Failed to locate hdiffz.exe after extraction."
               exit 1
           }
-          Write-Host "HDiffPatch 설치 완료!"
+          Write-Host "HDiffPatch tools installed successfully!"
 
       - name: Cache Pip Packages
         uses: actions/cache@v3
@@ -79,7 +79,7 @@ jobs:
           architecture: 'x64'
 
       # ----------------------------------------------------------------
-      # 2. 파이썬 환경 빌드
+      # 2. Build Python Environment
       # ----------------------------------------------------------------
       - name: Build Pure Isolated Python
         shell: powershell
@@ -88,44 +88,44 @@ jobs:
           if (Test-Path $EnvName) { Remove-Item $EnvName -Recurse -Force }
           New-Item -ItemType Directory -Path $EnvName -Force
 
-          # 파이썬 임베디드 다운로드
+          # Download Embedded Python
           $Url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip"
           Invoke-WebRequest -Uri $Url -OutFile "python.zip"
           Expand-Archive -Path "python.zip" -DestinationPath $EnvName -Force
           Remove-Item "python.zip" -Force
 
-          # 실행 파일명 변경
+          # Rename Executable
           Rename-Item -Path "$EnvName\python.exe" -NewName "kiosk_python.exe"
           $PythonExe = "$EnvName\kiosk_python.exe"
 
-          # ._pth 파일 수정
+          # Fix ._pth file
           $PthFile = "$EnvName\python311._pth"
           (Get-Content $PthFile) -replace '#import site', 'import site' | Set-Content $PthFile
           
-          # pip 설치
+          # Install pip
           Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          # 라이브러리 설치
+          # Install Libraries
           Write-Host "Installing libraries..."
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
           
-          # UniDic 다운로드
+          # Download UniDic
           Write-Host "Downloading UniDic Dictionary..."
           & $PythonExe -m unidic download
 
-          # PyWin32 DLL 복사 및 정리
+          # PyWin32 cleanup
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
           if (Test-Path $PyWin32Dir) {
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
-          # 캐시 제거
+          # Clean caches
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
           Get-ChildItem -Path "$EnvName" -Include "*.dist-info" -Recurse -Directory | Remove-Item -Recurse -Force
 
       # ----------------------------------------------------------------
-      # 3. Full 버전 압축 & Manifest
+      # 3. Full Zip & Manifest
       # ----------------------------------------------------------------
       - name: Setup Node.js for Manifest
         uses: actions/setup-node@v3
@@ -139,7 +139,7 @@ jobs:
         run: 7z a -mx=9 python-env-full.zip python-env
 
       # ----------------------------------------------------------------
-      # 4. 이전 버전(Latest Release) 다운로드 (비교 대상)
+      # 4. Download Previous Release (Comparison Target)
       # ----------------------------------------------------------------
       - name: Download Previous Release Asset
         uses: robinraju/release-downloader@v1.8
@@ -150,7 +150,7 @@ jobs:
           out-file-path: "previous_release"
 
       # ----------------------------------------------------------------
-      # 5. 바이너리 Diff(패치) 생성 (핵심 로직)
+      # 5. Generate Binary Diff (Patch)
       # ----------------------------------------------------------------
       - name: Generate HDiff Patch
         id: diff
@@ -162,8 +162,8 @@ jobs:
 
           if (Test-Path $OldFile) {
             Write-Host "Found previous version. Generating diff patch..."
-            # -c-zstd : zstd 압축 알고리즘 사용 (빠르고 강력함)
-            # -f : 강제 덮어쓰기
+            # -c-zstd : use zstd compression
+            # -f : force overwrite
             ./hdiffz.exe -c-zstd -f $OldFile $NewFile $PatchFile
           
             if (Test-Path $PatchFile) {
@@ -180,7 +180,7 @@ jobs:
           }
 
       # ----------------------------------------------------------------
-      # 6. 해시 생성 및 업로드
+      # 6. Generate Hashes & Upload
       # ----------------------------------------------------------------
       - name: Generate SHA256 Hashes
         shell: powershell
@@ -194,7 +194,7 @@ jobs:
           }
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             python-env-full.zip
