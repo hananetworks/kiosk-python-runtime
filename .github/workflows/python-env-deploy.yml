@@ -15,7 +15,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
-
+  19s
+Warning: Unexpected input(s) 'make_latest', valid inputs are ['body', 'body_path', 'name', 'tag_name', 'draft', 'prerelease', 'files', 'fail_on_unmatched_files', 'repository', 'token', 'target_commitish', 'discussion_category_name', 'generate_release_notes', 'append_body']
       - name: Cache Pip Packages
         uses: actions/cache@v3
         id: pip-cache
@@ -96,35 +97,58 @@ jobs:
         run: |
           Write-Host "Removing heavy libraries for Patch version..."
           $base = "python-env\Lib\site-packages"
-
-          # [중요] ErrorAction SilentlyContinue: 없으면 말고, 있으면 지운다. (에러 발생 안 함)
-
-          # 1. AI and CUDA libs (The heaviest parts)
-          Remove-Item "$base\torch" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\torchaudio" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\torchvision" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\nvidia" -Recurse -Force -ErrorAction SilentlyContinue
           
-          # 2. Transformers and NLP
-          Remove-Item "$base\transformers" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\tokenizers" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\huggingface_hub" -Recurse -Force -ErrorAction SilentlyContinue
+          # [기본] 에러 무시 옵션
+          $ea = "SilentlyContinue"
           
-          # 3. Data Science and Dictionaries
-          Remove-Item "$base\numpy" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\pandas" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\scipy" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\scikit_learn" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\sklearn" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\unidic" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\meacab_ko_dic" -Recurse -Force -ErrorAction SilentlyContinue
-
-          # 4. Others
-          Remove-Item "$base\PIL" -Recurse -Force -ErrorAction SilentlyContinue
-          Remove-Item "$base\matplotlib" -Recurse -Force -ErrorAction SilentlyContinue
+          # ---------------------------------------------------------
+          # 1. AI & Deep Learning (기존 삭제 목록)
+          # ---------------------------------------------------------
+          Remove-Item "$base\torch" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\torchaudio" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\torchvision" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\nvidia" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\transformers" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\tokenizers" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\huggingface_hub" -Recurse -Force -ErrorAction $ea
           
-          # 5. Cache Cleanup
-          Get-ChildItem -Path "python-env" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          # ---------------------------------------------------------
+          # 2. 클라우드 SDK & 통신 (여기가 391MB의 주범!)
+          # ---------------------------------------------------------
+          # AWS / NCP 관련 (엄청 큼)
+          Remove-Item "$base\boto3" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\botocore" -Recurse -Force -ErrorAction $ea
+          # Google Cloud 관련
+          Remove-Item "$base\google" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\googleapis" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\grpc" -Recurse -Force -ErrorAction $ea
+          
+          # ---------------------------------------------------------
+          # 3. 데이터 과학 & 사전 (안 바뀌는 무거운 놈들)
+          # ---------------------------------------------------------
+          Remove-Item "$base\numpy" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\pandas" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\scipy" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\scikit_learn" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\sklearn" -Recurse -Force -ErrorAction $ea
+          # 사전 데이터
+          Remove-Item "$base\unidic" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\meacab_ko_dic" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\mecab" -Recurse -Force -ErrorAction $ea
+          
+          # ---------------------------------------------------------
+          # 4. 기타 및 런타임에 불필요한 도구
+          # ---------------------------------------------------------
+          Remove-Item "$base\PIL" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\matplotlib" -Recurse -Force -ErrorAction $ea
+          # 설치 도구 제거 (실행할 땐 필요 없음)
+          Remove-Item "$base\pip" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\setuptools" -Recurse -Force -ErrorAction $ea
+          Remove-Item "$base\wheel" -Recurse -Force -ErrorAction $ea
+          
+          # 5. 캐시 및 메타데이터 제거
+          Get-ChildItem -Path "python-env" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force -ErrorAction $ea
+          Get-ChildItem -Path "python-env" -Include "*.dist-info" -Recurse -Directory | Remove-Item -Recurse -Force -ErrorAction $ea
           
           Write-Host "Cleanup complete."
 
@@ -141,7 +165,7 @@ jobs:
           "Patch: $hashPatch" | Out-File -Encoding ASCII hash.txt -Append
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             python-env-full.zip
