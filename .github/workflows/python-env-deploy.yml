@@ -16,7 +16,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # [캐시] requirements.txt가 안 바뀌면 다운로드 생략
       - name: Cache Pip Packages
         uses: actions/cache@v3
         id: pip-cache
@@ -34,7 +33,7 @@ jobs:
           python-version: '3.11'
           architecture: 'x64'
 
-      # [삭제됨] Build Wheels for C-Extensions (simpleaudio 제거로 불필요)
+      # [삭제됨] Build Wheels for C-Extensions (에러 원인이므로 삭제)
 
       - name: Build Pure Isolated Python
         shell: powershell
@@ -62,7 +61,7 @@ jobs:
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          # 5. 라이브러리 설치 (simpleaudio wheel 빌드 과정 제거됨)
+          # 5. 라이브러리 설치 (wheel 빌드 과정 제거됨)
           Write-Host "Installing libraries..."
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
           
