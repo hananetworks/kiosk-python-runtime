@@ -113,25 +113,7 @@ jobs:
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
           
-          # ================================================================
-          # [BugFix] MeCab이 unidic_lite 대신 unidic 폴더를 찾는 문제 해결
-          # ================================================================
-          Write-Host ""
-          Write-Host "Fixing MeCab dictionary path (unidic_lite -> unidic)..."
-          $SitePackages = "$EnvName\Lib\site-packages"
-          $UnidicLite = "$SitePackages\unidic_lite"
-          $Unidic = "$SitePackages\unidic"
-          
-          if (Test-Path $UnidicLite) {
-              if (-not (Test-Path $Unidic)) {
-                  Copy-Item -Path $UnidicLite -Destination $Unidic -Recurse -Force
-                  Write-Host "  -> Copied 'unidic_lite' to 'unidic' successfully."
-              } else {
-                  Write-Host "  -> 'unidic' folder already exists."
-              }
-          } else {
-              Write-Warning "  -> 'unidic_lite' folder not found. MeCab might fail."
-          }
+          # [삭제됨] MeCab BugFix 섹션 제거 (unidic 중복 문제 해결)
 
           # ================================================================
           # TTS 모델 다운로드 (Piper-VN, Sherpa-PH)
