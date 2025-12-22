@@ -114,6 +114,26 @@ jobs:
           }
           
           # ================================================================
+          # [BugFix] MeCab이 unidic_lite 대신 unidic 폴더를 찾는 문제 해결
+          # ================================================================
+          Write-Host ""
+          Write-Host "Fixing MeCab dictionary path (unidic_lite -> unidic)..."
+          $SitePackages = "$EnvName\Lib\site-packages"
+          $UnidicLite = "$SitePackages\unidic_lite"
+          $Unidic = "$SitePackages\unidic"
+          
+          if (Test-Path $UnidicLite) {
+              if (-not (Test-Path $Unidic)) {
+                  Copy-Item -Path $UnidicLite -Destination $Unidic -Recurse -Force
+                  Write-Host "  -> Copied 'unidic_lite' to 'unidic' successfully."
+              } else {
+                  Write-Host "  -> 'unidic' folder already exists."
+              }
+          } else {
+              Write-Warning "  -> 'unidic_lite' folder not found. MeCab might fail."
+          }
+
+          # ================================================================
           # TTS 모델 다운로드 (Piper-VN, Sherpa-PH)
           # ================================================================
           Write-Host ""
@@ -195,7 +215,7 @@ jobs:
           out-file-path: "previous_release"
 
       # ----------------------------------------------------------------
-      # 5. Generate Binary Diff (Patch) - [수정됨: -s-64 옵션 추가]
+      # 5. Generate Binary Diff (Patch)
       # ----------------------------------------------------------------
       - name: Generate HDiff Patch
         id: diff
@@ -207,8 +227,6 @@ jobs:
 
           if (Test-Path $OldFile) {
             Write-Host "Found previous version. Generating diff patch..."
-          
-            # [중요] -s-64 옵션을 추가하여 메모리 사용량을 대폭 줄임
             ./hdiffz.exe -c-zstd -s-64 -f $OldFile $NewFile $PatchFile
           
             if (Test-Path $PatchFile) {
