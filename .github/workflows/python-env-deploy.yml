@@ -83,6 +83,8 @@ jobs:
       - name: Build Pure Isolated Python
         shell: powershell
         run: |
+          $ErrorActionPreference = "Stop"
+
           $EnvName = "python-env"
           if (Test-Path $EnvName) { Remove-Item $EnvName -Recurse -Force }
           New-Item -ItemType Directory -Path $EnvName -Force
@@ -104,9 +106,7 @@ jobs:
 
           Write-Host "Installing libraries..."
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
-          
-          Write-Host "Downloading UniDic Dictionary..."
-          & $PythonExe -m unidic download
+          if ($LASTEXITCODE -ne 0) { throw "Pip install failed" }
 
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
           if (Test-Path $PyWin32Dir) {
@@ -114,20 +114,25 @@ jobs:
           }
           
           # ================================================================
-          # [NEW] TTS 모델 추가 (Piper: 베트남어 / Sherpa: 필리핀어)
+          # TTS 모델 다운로드 (Piper-VN, Sherpa-PH)
           # ================================================================
           Write-Host ""
           Write-Host "Downloading TTS Models (Piper-VN, Sherpa-PH)..."
           
-          # Zip에 포함되도록 python-env 내부에 저장
           $ModelDir = "$EnvName\tts_models"
           New-Item -ItemType Directory -Path "$ModelDir\piper_models" -Force | Out-Null
           New-Item -ItemType Directory -Path "$ModelDir\sherpa_models\vits-mms-tgl" -Force | Out-Null
           
           & $PythonExe -c @"
-          from huggingface_hub import hf_hub_download
           import os
           import shutil
+          import sys
+
+          try:
+              from huggingface_hub import hf_hub_download
+          except ImportError:
+              print('Error: huggingface_hub not found.')
+              sys.exit(1)
 
           # 1. Piper (Vietnamese)
           piper_dir = './python-env/tts_models/piper_models'
@@ -141,6 +146,7 @@ jobs:
                   print(f' - OK: {fname}')
               except Exception as e:
                   print(f' - FAIL: {fname} ({e})')
+                  sys.exit(1)
 
           # 2. Sherpa-ONNX (Filipino/Tagalog)
           sherpa_dir = './python-env/tts_models/sherpa_models/vits-mms-tgl'
@@ -155,11 +161,12 @@ jobs:
                   print(f' - OK: {fname}')
               except Exception as e:
                   print(f' - FAIL: {fname} ({e})')
+                  sys.exit(1)
           
           if os.path.exists('./temp_dl'): shutil.rmtree('./temp_dl')
           "@
+          if ($LASTEXITCODE -ne 0) { throw "Model download failed" }
           
-          # [중요] __pycache__ 제거 (모델 다운로드 후 정리)
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
 
       # ----------------------------------------------------------------
@@ -188,7 +195,7 @@ jobs:
           out-file-path: "previous_release"
 
       # ----------------------------------------------------------------
-      # 5. Generate Binary Diff (Patch)
+      # 5. Generate Binary Diff (Patch) - [수정됨: -s-64 옵션 추가]
       # ----------------------------------------------------------------
       - name: Generate HDiff Patch
         id: diff
@@ -200,7 +207,9 @@ jobs:
 
           if (Test-Path $OldFile) {
             Write-Host "Found previous version. Generating diff patch..."
-            ./hdiffz.exe -c-zstd -f $OldFile $NewFile $PatchFile
+          
+            # [중요] -s-64 옵션을 추가하여 메모리 사용량을 대폭 줄임
+            ./hdiffz.exe -c-zstd -s-64 -f $OldFile $NewFile $PatchFile
           
             if (Test-Path $PatchFile) {
                $Size = (Get-Item $PatchFile).Length / 1MB
