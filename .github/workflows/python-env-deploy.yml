@@ -113,7 +113,53 @@ jobs:
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
           
-          # [중요 수정] __pycache__만 지우고 .dist-info는 절대 지우지 않음!
+          # ================================================================
+          # [NEW] TTS 모델 추가 (Piper: 베트남어 / Sherpa: 필리핀어)
+          # ================================================================
+          Write-Host ""
+          Write-Host "Downloading TTS Models (Piper-VN, Sherpa-PH)..."
+          
+          # Zip에 포함되도록 python-env 내부에 저장
+          $ModelDir = "$EnvName\tts_models"
+          New-Item -ItemType Directory -Path "$ModelDir\piper_models" -Force | Out-Null
+          New-Item -ItemType Directory -Path "$ModelDir\sherpa_models\vits-mms-tgl" -Force | Out-Null
+          
+          & $PythonExe -c @"
+          from huggingface_hub import hf_hub_download
+          import os
+          import shutil
+
+          # 1. Piper (Vietnamese)
+          piper_dir = './python-env/tts_models/piper_models'
+          files_piper = ['vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx', 'vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx.json']
+          
+          print('Downloading Piper (Vietnamese)...')
+          for fpath in files_piper:
+              fname = fpath.split('/')[-1]
+              try:
+                  hf_hub_download(repo_id='rhasspy/piper-voices', filename=fpath, local_dir=piper_dir, local_dir_use_symlinks=False)
+                  print(f' - OK: {fname}')
+              except Exception as e:
+                  print(f' - FAIL: {fname} ({e})')
+
+          # 2. Sherpa-ONNX (Filipino/Tagalog)
+          sherpa_dir = './python-env/tts_models/sherpa_models/vits-mms-tgl'
+          files_sherpa = ['tgl/tokens.txt', 'tgl/model.onnx']
+          
+          print('\nDownloading Sherpa (Filipino)...')
+          for fpath in files_sherpa:
+              fname = fpath.split('/')[-1]
+              try:
+                  downloaded = hf_hub_download(repo_id='willwade/mms-tts-multilingual-models-onnx', filename=fpath, local_dir='./temp_dl')
+                  shutil.move(downloaded, os.path.join(sherpa_dir, fname))
+                  print(f' - OK: {fname}')
+              except Exception as e:
+                  print(f' - FAIL: {fname} ({e})')
+          
+          if os.path.exists('./temp_dl'): shutil.rmtree('./temp_dl')
+          "@
+          
+          # [중요] __pycache__ 제거 (모델 다운로드 후 정리)
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
 
       # ----------------------------------------------------------------
