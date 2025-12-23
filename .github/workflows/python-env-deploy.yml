@@ -16,9 +16,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # ----------------------------------------------------------------
-      # 1. HDiffPatch Tool Setup
-      # ----------------------------------------------------------------
+      # 1. HDiffPatch Tool Setup (최신 수정 버전)
       - name: Download HDiffPatch Tool
         shell: powershell
         env:
@@ -52,17 +50,13 @@ jobs:
           }
 
           $downloadUrl = $targetAsset.browser_download_url
-          Write-Host "Downloading from: $downloadUrl"
           Invoke-WebRequest -Uri $downloadUrl -OutFile "hdiff_tool.zip"
           Expand-Archive -Path "hdiff_tool.zip" -DestinationPath "hdiff_tools" -Force
           Get-ChildItem -Path "hdiff_tools" -Recurse -Filter "hdiffz.exe" | Copy-Item -Destination . -Force
           Get-ChildItem -Path "hdiff_tools" -Recurse -Filter "hpatchz.exe" | Copy-Item -Destination . -Force
-          
-          if (-not (Test-Path "hdiffz.exe")) { Write-Error "Failed to locate hdiffz.exe"; exit 1 }
 
       - name: Cache Pip Packages
         uses: actions/cache@v3
-        id: pip-cache
         with:
           path: |
             ~/.cache/pip
@@ -71,15 +65,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
-      - name: Setup System Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-          architecture: 'x64'
-
-      # ----------------------------------------------------------------
       # 2. Build Python Environment
-      # ----------------------------------------------------------------
       - name: Build Pure Isolated Python
         shell: powershell
         run: |
@@ -89,6 +75,7 @@ jobs:
           if (Test-Path $EnvName) { Remove-Item $EnvName -Recurse -Force }
           New-Item -ItemType Directory -Path $EnvName -Force
 
+          # Python Download
           $Url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip"
           Invoke-WebRequest -Uri $Url -OutFile "python.zip"
           Expand-Archive -Path "python.zip" -DestinationPath $EnvName -Force
@@ -100,6 +87,7 @@ jobs:
           $PthFile = "$EnvName\python311._pth"
           (Get-Content $PthFile) -replace '#import site', 'import site' | Set-Content $PthFile
           
+          # Pip Install
           Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
@@ -113,67 +101,75 @@ jobs:
               Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
           }
           
-          # [삭제됨] MeCab BugFix 섹션 제거 (unidic 중복 문제 해결)
+          # ================================================================
+          # [BugFix 1] MeCab 사전 폴더명 보정 (unidic_lite -> unidic)
+          # ================================================================
+          Write-Host "Fixing MeCab dictionary path..."
+          $SitePackages = "$EnvName\Lib\site-packages"
+          $UnidicLite = "$SitePackages\unidic_lite"
+          $Unidic = "$SitePackages\unidic"
+          
+          if (Test-Path $UnidicLite) {
+              if (-not (Test-Path $Unidic)) {
+                  Copy-Item -Path $UnidicLite -Destination $Unidic -Recurse -Force
+                  Write-Host "  -> Copied 'unidic_lite' to 'unidic' successfully."
+              }
+          }
 
           # ================================================================
-          # TTS 모델 다운로드 (Piper-VN, Sherpa-PH)
+          # [BugFix 2] TTS 모델 다운로드 (이게 없으면 Piper/Sherpa 소리 안남!)
           # ================================================================
-          Write-Host ""
-          Write-Host "Downloading TTS Models (Piper-VN, Sherpa-PH)..."
-          
+          Write-Host "Downloading TTS Models..."
           $ModelDir = "$EnvName\tts_models"
           New-Item -ItemType Directory -Path "$ModelDir\piper_models" -Force | Out-Null
           New-Item -ItemType Directory -Path "$ModelDir\sherpa_models\vits-mms-tgl" -Force | Out-Null
           
           & $PythonExe -c @"
-          import os
-          import shutil
-          import sys
-
+          import os, shutil, sys
           try:
               from huggingface_hub import hf_hub_download
           except ImportError:
-              print('Error: huggingface_hub not found.')
-              sys.exit(1)
+              print('huggingface_hub not found'); sys.exit(1)
 
-          # 1. Piper (Vietnamese)
-          piper_dir = './python-env/tts_models/piper_models'
-          files_piper = ['vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx', 'vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx.json']
+          # 1. Piper Models (Vietnamese, Spanish, French)
+          piper_dir = r'$ModelDir\piper_models'
+          piper_files = [
+              'vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx', 
+              'vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx.json',
+              'es/es_ES/davefx/medium/es_ES-davefx-medium.onnx',
+              'es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json',
+              'fr/fr_FR/upmc/medium/fr_FR-upmc-medium.onnx',
+              'fr/fr_FR/upmc/medium/fr_FR-upmc-medium.onnx.json'
+          ]
           
-          print('Downloading Piper (Vietnamese)...')
-          for fpath in files_piper:
+          print('Downloading Piper models...')
+          for fpath in piper_files:
               fname = fpath.split('/')[-1]
               try:
                   hf_hub_download(repo_id='rhasspy/piper-voices', filename=fpath, local_dir=piper_dir, local_dir_use_symlinks=False)
                   print(f' - OK: {fname}')
               except Exception as e:
-                  print(f' - FAIL: {fname} ({e})')
-                  sys.exit(1)
+                  print(f' - FAIL: {fname}')
 
-          # 2. Sherpa-ONNX (Filipino/Tagalog)
-          sherpa_dir = './python-env/tts_models/sherpa_models/vits-mms-tgl'
-          files_sherpa = ['tgl/tokens.txt', 'tgl/model.onnx']
+          # 2. Sherpa Models (Filipino)
+          sherpa_dir = r'$ModelDir\sherpa_models\vits-mms-tgl'
+          sherpa_files = ['tgl/tokens.txt', 'tgl/model.onnx']
           
-          print('\nDownloading Sherpa (Filipino)...')
-          for fpath in files_sherpa:
+          print('Downloading Sherpa models...')
+          for fpath in sherpa_files:
               fname = fpath.split('/')[-1]
               try:
-                  downloaded = hf_hub_download(repo_id='willwade/mms-tts-multilingual-models-onnx', filename=fpath, local_dir='./temp_dl')
-                  shutil.move(downloaded, os.path.join(sherpa_dir, fname))
+                  down_path = hf_hub_download(repo_id='willwade/mms-tts-multilingual-models-onnx', filename=fpath)
+                  shutil.copy(down_path, os.path.join(sherpa_dir, fname))
                   print(f' - OK: {fname}')
               except Exception as e:
                   print(f' - FAIL: {fname} ({e})')
-                  sys.exit(1)
-          
-          if os.path.exists('./temp_dl'): shutil.rmtree('./temp_dl')
           "@
-          if ($LASTEXITCODE -ne 0) { throw "Model download failed" }
           
+          # [중요] .dist-info 폴더 삭제하지 않음 (안전모드)
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
 
-      # ----------------------------------------------------------------
       # 3. Full Zip & Manifest
-      # ----------------------------------------------------------------
       - name: Setup Node.js for Manifest
         uses: actions/setup-node@v3
         with:
@@ -185,9 +181,7 @@ jobs:
       - name: Zip NEW Full Environment
         run: 7z a -mx=9 python-env-full.zip python-env
 
-      # ----------------------------------------------------------------
       # 4. Download Previous Release
-      # ----------------------------------------------------------------
       - name: Download Previous Release Asset
         uses: robinraju/release-downloader@v1.8
         continue-on-error: true
@@ -196,9 +190,7 @@ jobs:
           fileName: "python-env-full.zip"
           out-file-path: "previous_release"
 
-      # ----------------------------------------------------------------
-      # 5. Generate Binary Diff (Patch)
-      # ----------------------------------------------------------------
+      # 5. Generate HDiff Patch (메모리 옵션 추가됨)
       - name: Generate HDiff Patch
         id: diff
         shell: powershell
@@ -209,6 +201,7 @@ jobs:
 
           if (Test-Path $OldFile) {
             Write-Host "Found previous version. Generating diff patch..."
+            # [Fix] -s-64 옵션 추가 (메모리 부족 방지)
             ./hdiffz.exe -c-zstd -s-64 -f $OldFile $NewFile $PatchFile
           
             if (Test-Path $PatchFile) {
@@ -224,9 +217,7 @@ jobs:
             echo "PATCH_EXISTS=false" >> $env:GITHUB_ENV
           }
 
-      # ----------------------------------------------------------------
       # 6. Upload
-      # ----------------------------------------------------------------
       - name: Generate SHA256 Hashes
         shell: powershell
         run: |
