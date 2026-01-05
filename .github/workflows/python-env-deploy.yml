@@ -166,6 +166,65 @@ jobs:
                   print(f' - FAIL: {fname} ({e})')
           "@
           
+          # ================================================================
+          # [BugFix 3] STT 모델 다운로드 (Sherpa + Vosk)
+          # ================================================================
+          Write-Host "Downloading STT Models..."
+          
+          # api_server.py 복사 (통합 서버)
+          if (Test-Path ".\api_server.py") {
+              Copy-Item ".\api_server.py" -Destination "$EnvName\api_server.py" -Force
+              Write-Host "   -> api_server.py copied."
+          }
+          
+          $STTModelDir = "$EnvName\models"
+          New-Item -ItemType Directory -Path $STTModelDir -Force | Out-Null
+          
+          & $PythonExe -c @"
+          import os, urllib.request, tarfile, zipfile
+          
+          MODELS_DIR = r'$STTModelDir'
+          
+          # 1. Sherpa Korean
+          print('Downloading Sherpa Korean...')
+          url1 = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-korean-2024-06-16.tar.bz2'
+          filename1 = os.path.join(MODELS_DIR, 'sherpa-korean.tar.bz2')
+          try:
+              urllib.request.urlretrieve(url1, filename1)
+              with tarfile.open(filename1, 'r:bz2') as tar:
+                  tar.extractall(MODELS_DIR)
+              os.remove(filename1)
+              print('  - OK: Sherpa Korean')
+          except Exception as e:
+              print(f'  - FAIL: Sherpa Korean ({e})')
+          
+          # 2. Sherpa Bilingual
+          print('Downloading Sherpa Bilingual...')
+          url2 = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2'
+          filename2 = os.path.join(MODELS_DIR, 'sherpa-bilingual.tar.bz2')
+          try:
+              urllib.request.urlretrieve(url2, filename2)
+              with tarfile.open(filename2, 'r:bz2') as tar:
+                  tar.extractall(MODELS_DIR)
+              os.remove(filename2)
+              print('  - OK: Sherpa Bilingual')
+          except Exception as e:
+              print(f'  - FAIL: Sherpa Bilingual ({e})')
+          
+          # 3. Vosk Japanese
+          print('Downloading Vosk Japanese...')
+          url3 = 'https://alphacephei.com/vosk/models/vosk-model-small-ja-0.22.zip'
+          filename3 = os.path.join(MODELS_DIR, 'vosk-ja.zip')
+          try:
+              urllib.request.urlretrieve(url3, filename3)
+              with zipfile.ZipFile(filename3, 'r') as zip_ref:
+                  zip_ref.extractall(MODELS_DIR)
+              os.remove(filename3)
+              print('  - OK: Vosk Japanese')
+          except Exception as e:
+              print(f'  - FAIL: Vosk Japanese ({e})')
+          "@
+          
           # [중요] .dist-info 폴더 삭제하지 않음 (안전모드)
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
 
