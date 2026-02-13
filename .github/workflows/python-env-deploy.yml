@@ -15,8 +15,10 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          lfs: true
 
-      # 1. HDiffPatch Tool Setup (최신 수정 버전)
+      # 1. HDiffPatch Tool Setup
       - name: Download HDiffPatch Tool
         shell: powershell
         env:
@@ -92,8 +94,23 @@ jobs:
           & $PythonExe get-pip.py --no-warn-script-location
           Remove-Item "get-pip.py" -Force
 
-          Write-Host "Installing libraries..."
+          Write-Host "Installing libraries from requirements.txt..."
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
+          
+          # ----------------------------------------------------------------
+          # [NPU Addon] HailoRT Wheel 설치 (libs 폴더 활용)
+          # ----------------------------------------------------------------
+          Write-Host "Installing HailoRT local wheel..."
+          $HailoWheel = Get-ChildItem -Path "libs" -Filter "hailort-*.whl" | Select-Object -First 1
+          
+          if ($HailoWheel) {
+              Write-Host "Found wheel: $($HailoWheel.Name)"
+              & $PythonExe -m pip install $HailoWheel.FullName --no-warn-script-location
+          } else {
+              Write-Error "FATAL: HailoRT .whl file not found in 'libs/' directory."
+              exit 1
+          }
+
           if ($LASTEXITCODE -ne 0) { throw "Pip install failed" }
 
           $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
@@ -167,63 +184,30 @@ jobs:
           "@
           
           # ================================================================
-          # [BugFix 3] STT 모델 다운로드 (Sherpa + Vosk)
+          # [Changed] STT 모델 설정 (NPU용 HEF 파일 복사)
+          # 기존 Sherpa/Vosk 다운로드 로직 삭제됨
           # ================================================================
-          Write-Host "Downloading STT Models..."
+          Write-Host "Setting up NPU STT Models..."
           
           # api_server.py 복사 (통합 서버)
           if (Test-Path ".\api_server.py") {
               Copy-Item ".\api_server.py" -Destination "$EnvName\api_server.py" -Force
               Write-Host "   -> api_server.py copied."
           }
-          
+
           $STTModelDir = "$EnvName\models"
           New-Item -ItemType Directory -Path $STTModelDir -Force | Out-Null
           
-          & $PythonExe -c @"
-          import os, urllib.request, tarfile, zipfile
-          
-          MODELS_DIR = r'$STTModelDir'
-          
-          # 1. Sherpa Korean
-          print('Downloading Sherpa Korean...')
-          url1 = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-korean-2024-06-16.tar.bz2'
-          filename1 = os.path.join(MODELS_DIR, 'sherpa-korean.tar.bz2')
-          try:
-              urllib.request.urlretrieve(url1, filename1)
-              with tarfile.open(filename1, 'r:bz2') as tar:
-                  tar.extractall(MODELS_DIR)
-              os.remove(filename1)
-              print('  - OK: Sherpa Korean')
-          except Exception as e:
-              print(f'  - FAIL: Sherpa Korean ({e})')
-          
-          # 2. Sherpa Bilingual
-          print('Downloading Sherpa Bilingual...')
-          url2 = 'https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20.tar.bz2'
-          filename2 = os.path.join(MODELS_DIR, 'sherpa-bilingual.tar.bz2')
-          try:
-              urllib.request.urlretrieve(url2, filename2)
-              with tarfile.open(filename2, 'r:bz2') as tar:
-                  tar.extractall(MODELS_DIR)
-              os.remove(filename2)
-              print('  - OK: Sherpa Bilingual')
-          except Exception as e:
-              print(f'  - FAIL: Sherpa Bilingual ({e})')
-          
-          # 3. Vosk Japanese
-          print('Downloading Vosk Japanese...')
-          url3 = 'https://alphacephei.com/vosk/models/vosk-model-small-ja-0.22.zip'
-          filename3 = os.path.join(MODELS_DIR, 'vosk-ja.zip')
-          try:
-              urllib.request.urlretrieve(url3, filename3)
-              with zipfile.ZipFile(filename3, 'r') as zip_ref:
-                  zip_ref.extractall(MODELS_DIR)
-              os.remove(filename3)
-              print('  - OK: Vosk Japanese')
-          except Exception as e:
-              print(f'  - FAIL: Vosk Japanese ({e})')
-          "@
+          # 로컬에 있는 Whisper HEF 모델 복사 (models/whisper_small.hef)
+          $LocalHef = "models\whisper_small.hef"
+          if (Test-Path $LocalHef) {
+              Copy-Item -Path $LocalHef -Destination "$STTModelDir\whisper_small.hef" -Force
+              Write-Host "  -> Copied NPU Model: whisper_small.hef"
+          } else {
+              Write-Error "FATAL: 'models\whisper_small.hef' not found in repo."
+              # 필요한 경우 exit 1 처리하여 빌드 중단 가능
+              exit 1
+          }
           
           # [중요] .dist-info 폴더 삭제하지 않음 (안전모드)
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
