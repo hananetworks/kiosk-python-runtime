@@ -184,7 +184,8 @@ jobs:
           "@
           
           # ================================================================
-          # [Changed] STT 모델 설정 (NPU용 커스텀 HEF 파일 복사)
+          # [Changed] STT 모델 설정 (NPU용 HEF 파일 복사)
+          # 기존 Sherpa/Vosk 다운로드 로직 삭제됨
           # ================================================================
           Write-Host "Setting up NPU STT Models..."
           
@@ -197,16 +198,14 @@ jobs:
           $STTModelDir = "$EnvName\models"
           New-Item -ItemType Directory -Path $STTModelDir -Force | Out-Null
           
-          # [수정됨] 단일 파일이 아니라 models 폴더의 모든 .hef 파일을 싹 다 복사
-          $LocalModels = Get-ChildItem -Path "models" -Filter "*.hef"
-          
-          if ($LocalModels) {
-              foreach ($model in $LocalModels) {
-                  Copy-Item -Path $model.FullName -Destination "$STTModelDir\$($model.Name)" -Force
-                  Write-Host "  -> Copied NPU Model: $($model.Name)"
-              }
+          # 로컬에 있는 Whisper HEF 모델 복사 (models/whisper_small.hef)
+          $LocalHef = "models\whisper_small.hef"
+          if (Test-Path $LocalHef) {
+              Copy-Item -Path $LocalHef -Destination "$STTModelDir\whisper_small.hef" -Force
+              Write-Host "  -> Copied NPU Model: whisper_small.hef"
           } else {
-              Write-Error "FATAL: No .hef files found in 'models/' directory."
+              Write-Error "FATAL: 'models\whisper_small.hef' not found in repo."
+              # 필요한 경우 exit 1 처리하여 빌드 중단 가능
               exit 1
           }
           
