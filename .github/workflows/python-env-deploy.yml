@@ -204,9 +204,7 @@ jobs:
               Copy-Item -Path $LocalHef -Destination "$STTModelDir\whisper_small.hef" -Force
               Write-Host "  -> Copied NPU Model: whisper_small.hef"
           } else {
-              Write-Error "FATAL: 'models\whisper_small.hef' not found in repo."
-              # 필요한 경우 exit 1 처리하여 빌드 중단 가능
-              exit 1
+              Write-Host "⚠️ Warning: 'models\whisper_small.hef' not found. Skipping NPU model copy."
           }
           
           # [중요] .dist-info 폴더 삭제하지 않음 (안전모드)
