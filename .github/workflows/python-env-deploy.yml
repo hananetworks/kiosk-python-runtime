@@ -208,6 +208,20 @@ jobs:
           }
           
           # [중요] .dist-info 폴더 삭제하지 않음 (안전모드)
+          if (Test-Path ".\kiosk_stt.py") {
+              Copy-Item ".\kiosk_stt.py" -Destination "$EnvName\kiosk_stt.py" -Force
+              Write-Host "  -> Copied OpenVINO STT engine: kiosk_stt.py"
+          }
+
+          $OpenVinoModelDir = "models\whisper-small-int8-ov"
+          if (Test-Path $OpenVinoModelDir) {
+              New-Item -ItemType Directory -Path "$STTModelDir\whisper-small-int8-ov" -Force | Out-Null
+              Copy-Item -Path "$OpenVinoModelDir\*" -Destination "$STTModelDir\whisper-small-int8-ov" -Recurse -Force
+              Write-Host "  -> Copied OpenVINO STT model: whisper-small-int8-ov"
+          } else {
+              Write-Host "?좑툘 Warning: 'models\whisper-small-int8-ov' not found. Skipping OpenVINO model copy."
+          }
+
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
 
       # 3. Full Zip & Manifest

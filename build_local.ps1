@@ -2,7 +2,7 @@
 $ErrorActionPreference = "Stop"
 
 # ★★★ [핵심] 목표 경로 설정 ★★★
-$TargetBase = "C:\Users\hana_us04\AppData\Local\MAXEE_promotional"
+$TargetBase = "C:\Users\hana_us04\AppData\Local\MyKiosk"
 $EnvName = "$TargetBase\python-env"
 $ZipName = "$TargetBase\python-env-full.zip"
 
@@ -44,7 +44,23 @@ Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile $GetPip
 Remove-Item $GetPip -Force
 
 Write-Host "📦 Installing libraries (requirements.txt)..."
-& $PythonExe -m pip install -r requirements.txt huggingface_hub --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
+& $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
+
+Write-Host "📦 Installing critical runtime dependencies..."
+& $PythonExe -m pip install `
+    torch==2.4.1+cpu `
+    torchaudio==2.4.1+cpu `
+    fastapi `
+    "uvicorn[standard]" `
+    google-cloud-speech `
+    numpy `
+    psutil `
+    websockets `
+    openvino `
+    openvino-genai `
+    sherpa-onnx==1.12.26 `
+    --no-warn-script-location `
+    --extra-index-url https://download.pytorch.org/whl/cpu
 
 # 4. MeCab 폴더 보정
 Write-Host "🔧 Fixing MeCab folders..."
@@ -188,6 +204,12 @@ Push-Location $EnvName
 Pop-Location
 
 Remove-Item $TempSTTInstaller -Force
+
+# 6.5 [OpenVINO STT] 엔진/모델 복사
+Write-Host "🎤 Copying OpenVINO STT engine..."
+Copy-Item -Path ".\kiosk_stt.py" -Destination "$EnvName\kiosk_stt.py" -Force
+New-Item -ItemType Directory -Path "$EnvName\models\whisper-small-int8-ov" -Force | Out-Null
+Copy-Item -Path ".\models\whisper-small-int8-ov\*" -Destination "$EnvName\models\whisper-small-int8-ov" -Recurse -Force
 
 # 7. 정리 및 압축
 Write-Host "🧹 Cleaning cache..."
