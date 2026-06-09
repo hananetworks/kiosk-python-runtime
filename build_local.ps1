@@ -12,7 +12,7 @@ Write-Host " [Local Build] Target: $TargetBase" -ForegroundColor Cyan
 # 0. 프로세스 강제 종료
 # =========================================================
 Write-Host " Killing existing processes..." -ForegroundColor Magenta
-Get-Process "stt_server", "kiosk_python", "python", "api_server" -ErrorAction SilentlyContinue | Stop-Process -Force
+Get-Process "kiosk_python", "python", "api_server" -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Seconds 2
 
 # 1. 폴더 정리
