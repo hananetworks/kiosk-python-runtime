@@ -98,7 +98,7 @@ jobs:
           & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
           
           # ----------------------------------------------------------------
-          # [NPU Addon] HailoRT Wheel 설치 (libs 폴더 활용)
+          # [NPU Addon] Install the local HailoRT wheel from libs/
           # ----------------------------------------------------------------
           Write-Host "Installing HailoRT local wheel..."
           $HailoWheel = Get-ChildItem -Path "libs" -Filter "hailort-*.whl" | Select-Object -First 1
@@ -119,7 +119,7 @@ jobs:
           }
           
           # ================================================================
-          # [BugFix 1] MeCab 사전 폴더명 보정 (unidic_lite -> unidic)
+          # [BugFix 1] Fix the MeCab dictionary path (unidic_lite -> unidic)
           # ================================================================
           Write-Host "Fixing MeCab dictionary path..."
           $SitePackages = "$EnvName\Lib\site-packages"
@@ -134,7 +134,7 @@ jobs:
           }
 
           # ================================================================
-          # [BugFix 2] TTS 모델 다운로드 (이게 없으면 Piper/Sherpa 소리 안남!)
+          # [BugFix 2] Download TTS models required for Piper and Sherpa
           # ================================================================
           Write-Host "Downloading TTS Models..."
           $ModelDir = "$EnvName\tts_models"
@@ -184,42 +184,22 @@ jobs:
           "@
           
           # ================================================================
-          # [Changed] STT 모델 설정 (NPU용 HEF 파일 복사)
-          # 기존 Sherpa/Vosk 다운로드 로직 삭제됨
+          # [Changed] Set up STT model assets and copy NPU/OpenVINO files
+          # The older Sherpa/Vosk download flow is intentionally removed.
           # ================================================================
           Write-Host "Setting up NPU STT Models..."
           
-          # api_server.py 복사 (통합 서버)
-          if (Test-Path ".\api_server.py") {
-              Copy-Item ".\api_server.py" -Destination "$EnvName\api_server.py" -Force
-              Write-Host "   -> api_server.py copied."
-          }
-
           $STTModelDir = "$EnvName\models"
           New-Item -ItemType Directory -Path $STTModelDir -Force | Out-Null
-          
-          # 로컬에 있는 Whisper HEF 모델 복사 (models/whisper_small.hef)
-          $LocalHef = "models\whisper_small.hef"
-          if (Test-Path $LocalHef) {
-              Copy-Item -Path $LocalHef -Destination "$STTModelDir\whisper_small.hef" -Force
-              Write-Host "  -> Copied NPU Model: whisper_small.hef"
-          } else {
-              Write-Host "⚠️ Warning: 'models\whisper_small.hef' not found. Skipping NPU model copy."
-          }
-          
-          # [중요] .dist-info 폴더 삭제하지 않음 (안전모드)
-          if (Test-Path ".\kiosk_stt.py") {
-              Copy-Item ".\kiosk_stt.py" -Destination "$EnvName\kiosk_stt.py" -Force
-              Write-Host "  -> Copied OpenVINO STT engine: kiosk_stt.py"
-          }
 
+          # Keep only the packaged OpenVINO model assets here.
           $OpenVinoModelDir = "models\whisper-small-int8-ov"
           if (Test-Path $OpenVinoModelDir) {
               New-Item -ItemType Directory -Path "$STTModelDir\whisper-small-int8-ov" -Force | Out-Null
               Copy-Item -Path "$OpenVinoModelDir\*" -Destination "$STTModelDir\whisper-small-int8-ov" -Recurse -Force
-              Write-Host "  -> Copied OpenVINO STT model: whisper-small-int8-ov"
+              Write-Host "  -> Copied OpenVINO STT model assets: whisper-small-int8-ov"
           } else {
-              Write-Host "?좑툘 Warning: 'models\whisper-small-int8-ov' not found. Skipping OpenVINO model copy."
+              Write-Host "Warning: 'models\whisper-small-int8-ov' not found. Skipping OpenVINO model copy."
           }
 
           Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
@@ -245,7 +225,7 @@ jobs:
           fileName: "python-env-full.zip"
           out-file-path: "previous_release"
 
-      # 5. Generate HDiff Patch (메모리 옵션 추가됨)
+      # 5. Generate the HDiff patch
       - name: Generate HDiff Patch
         id: diff
         shell: powershell
@@ -256,7 +236,7 @@ jobs:
 
           if (Test-Path $OldFile) {
             Write-Host "Found previous version. Generating diff patch..."
-            # [Fix] -s-64 옵션 추가 (메모리 부족 방지)
+            # [Fix] Add -s-64 to reduce memory pressure.
             ./hdiffz.exe -c-zstd -s-64 -f $OldFile $NewFile $PatchFile
           
             if (Test-Path $PatchFile) {
