@@ -145,7 +145,14 @@ jobs:
             "python-env-full.zip",
             "python-engine.zip",
             "stt-assets.zip",
-            "tts-assets.zip",
+            "tts-core-assets.zip",
+            "tts-hf-bert-base-uncased.zip",
+            "tts-hf-bert-base-multilingual-uncased.zip",
+            "tts-hf-bert-base-japanese-v3.zip",
+            "tts-hf-melo-ko.zip",
+            "tts-hf-melo-en.zip",
+            "tts-hf-melo-ja.zip",
+            "tts-hf-melo-zh.zip",
             "hailo-addon.zip",
             "patch.hdiff",
             "hpatchz.exe",
@@ -167,7 +174,14 @@ jobs:
             out/python-env-full.zip
             out/python-engine.zip
             out/stt-assets.zip
-            out/tts-assets.zip
+            out/tts-core-assets.zip
+            out/tts-hf-bert-base-uncased.zip
+            out/tts-hf-bert-base-multilingual-uncased.zip
+            out/tts-hf-bert-base-japanese-v3.zip
+            out/tts-hf-melo-ko.zip
+            out/tts-hf-melo-en.zip
+            out/tts-hf-melo-ja.zip
+            out/tts-hf-melo-zh.zip
             out/hailo-addon.zip
             out/patch.hdiff
             out/hpatchz.exe
@@ -175,6 +189,5 @@ jobs:
             out/runtime-manifest.json
             out/hash.txt
           prerelease: false
-          make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
