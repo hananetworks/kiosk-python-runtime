@@ -11,6 +11,8 @@ jobs:
     runs-on: windows-latest
     permissions:
       contents: write
+    env:
+      ARTIFACT_DIR: out
 
     steps:
       - name: Checkout code
@@ -70,139 +72,7 @@ jobs:
       # 2. Build Python Environment
       - name: Build Pure Isolated Python
         shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-
-          $EnvName = "python-env"
-          if (Test-Path $EnvName) { Remove-Item $EnvName -Recurse -Force }
-          New-Item -ItemType Directory -Path $EnvName -Force
-
-          # Python Download
-          $Url = "https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip"
-          Invoke-WebRequest -Uri $Url -OutFile "python.zip"
-          Expand-Archive -Path "python.zip" -DestinationPath $EnvName -Force
-          Remove-Item "python.zip" -Force
-
-          Rename-Item -Path "$EnvName\python.exe" -NewName "kiosk_python.exe"
-          $PythonExe = "$EnvName\kiosk_python.exe"
-
-          $PthFile = "$EnvName\python311._pth"
-          (Get-Content $PthFile) -replace '#import site', 'import site' | Set-Content $PthFile
-          
-          # Pip Install
-          Invoke-WebRequest -Uri "https://bootstrap.pypa.io/get-pip.py" -OutFile "get-pip.py"
-          & $PythonExe get-pip.py --no-warn-script-location
-          Remove-Item "get-pip.py" -Force
-
-          Write-Host "Installing libraries from requirements.txt..."
-          & $PythonExe -m pip install -r requirements.txt --no-warn-script-location --extra-index-url https://download.pytorch.org/whl/cpu
-          
-          # ----------------------------------------------------------------
-          # [NPU Addon] Install the local HailoRT wheel from libs/
-          # ----------------------------------------------------------------
-          Write-Host "Installing HailoRT local wheel..."
-          $HailoWheel = Get-ChildItem -Path "libs" -Filter "hailort-*.whl" | Select-Object -First 1
-          
-          if ($HailoWheel) {
-              Write-Host "Found wheel: $($HailoWheel.Name)"
-              & $PythonExe -m pip install $HailoWheel.FullName --no-warn-script-location
-          } else {
-              Write-Error "FATAL: HailoRT .whl file not found in 'libs/' directory."
-              exit 1
-          }
-
-          if ($LASTEXITCODE -ne 0) { throw "Pip install failed" }
-
-          $PyWin32Dir = "$EnvName\Lib\site-packages\pywin32_system32"
-          if (Test-Path $PyWin32Dir) {
-              Get-ChildItem -Path $PyWin32Dir -Filter "*.dll" | Copy-Item -Destination $EnvName -Force
-          }
-          
-          # ================================================================
-          # [BugFix 1] Fix the MeCab dictionary path (unidic_lite -> unidic)
-          # ================================================================
-          Write-Host "Fixing MeCab dictionary path..."
-          $SitePackages = "$EnvName\Lib\site-packages"
-          $UnidicLite = "$SitePackages\unidic_lite"
-          $Unidic = "$SitePackages\unidic"
-          
-          if (Test-Path $UnidicLite) {
-              if (-not (Test-Path $Unidic)) {
-                  Copy-Item -Path $UnidicLite -Destination $Unidic -Recurse -Force
-                  Write-Host "  -> Copied 'unidic_lite' to 'unidic' successfully."
-              }
-          }
-
-          # ================================================================
-          # [BugFix 2] Download TTS models required for Piper and Sherpa
-          # ================================================================
-          Write-Host "Downloading TTS Models..."
-          $ModelDir = "$EnvName\tts_models"
-          New-Item -ItemType Directory -Path "$ModelDir\piper_models" -Force | Out-Null
-          New-Item -ItemType Directory -Path "$ModelDir\sherpa_models\vits-mms-tgl" -Force | Out-Null
-          
-          & $PythonExe -c @"
-          import os, shutil, sys
-          try:
-              from huggingface_hub import hf_hub_download
-          except ImportError:
-              print('huggingface_hub not found'); sys.exit(1)
-
-          # 1. Piper Models (Vietnamese, Spanish, French)
-          piper_dir = r'$ModelDir\piper_models'
-          piper_files = [
-              'vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx', 
-              'vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx.json',
-              'es/es_ES/davefx/medium/es_ES-davefx-medium.onnx',
-              'es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json',
-              'fr/fr_FR/upmc/medium/fr_FR-upmc-medium.onnx',
-              'fr/fr_FR/upmc/medium/fr_FR-upmc-medium.onnx.json'
-          ]
-          
-          print('Downloading Piper models...')
-          for fpath in piper_files:
-              fname = fpath.split('/')[-1]
-              try:
-                  hf_hub_download(repo_id='rhasspy/piper-voices', filename=fpath, local_dir=piper_dir, local_dir_use_symlinks=False)
-                  print(f' - OK: {fname}')
-              except Exception as e:
-                  print(f' - FAIL: {fname}')
-
-          # 2. Sherpa Models (Filipino)
-          sherpa_dir = r'$ModelDir\sherpa_models\vits-mms-tgl'
-          sherpa_files = ['tgl/tokens.txt', 'tgl/model.onnx']
-          
-          print('Downloading Sherpa models...')
-          for fpath in sherpa_files:
-              fname = fpath.split('/')[-1]
-              try:
-                  down_path = hf_hub_download(repo_id='willwade/mms-tts-multilingual-models-onnx', filename=fpath)
-                  shutil.copy(down_path, os.path.join(sherpa_dir, fname))
-                  print(f' - OK: {fname}')
-              except Exception as e:
-                  print(f' - FAIL: {fname} ({e})')
-          "@
-          
-          # ================================================================
-          # [Changed] Set up STT model assets and copy NPU/OpenVINO files
-          # The older Sherpa/Vosk download flow is intentionally removed.
-          # ================================================================
-          Write-Host "Setting up NPU STT Models..."
-          
-          $STTModelDir = "$EnvName\models"
-          New-Item -ItemType Directory -Path $STTModelDir -Force | Out-Null
-
-          # Keep only the packaged OpenVINO model assets here.
-          $OpenVinoModelDir = "models\whisper-small-int8-ov"
-          if (Test-Path $OpenVinoModelDir) {
-              New-Item -ItemType Directory -Path "$STTModelDir\whisper-small-int8-ov" -Force | Out-Null
-              Copy-Item -Path "$OpenVinoModelDir\*" -Destination "$STTModelDir\whisper-small-int8-ov" -Recurse -Force
-              Write-Host "  -> Copied OpenVINO STT model assets: whisper-small-int8-ov"
-          } else {
-              Write-Host "Warning: 'models\whisper-small-int8-ov' not found. Skipping OpenVINO model copy."
-          }
-
-          Get-ChildItem -Path "$EnvName" -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
+        run: .\scripts\build-python-env.ps1
 
       # 3. Full Zip & Manifest
       - name: Setup Node.js for Manifest
@@ -215,6 +85,14 @@ jobs:
 
       - name: Zip NEW Full Environment
         run: 7z a -mx=9 python-env-full.zip python-env
+
+      - name: Package Split Runtime
+        shell: powershell
+        run: .\scripts\package-split-runtime.ps1
+
+      - name: Zip Hailo Addon Package
+        shell: powershell
+        run: .\scripts\package-hailo-addon.ps1
 
       # 4. Download Previous Release
       - name: Download Previous Release Asset
@@ -253,25 +131,49 @@ jobs:
           }
 
       # 6. Upload
-      - name: Generate SHA256 Hashes
+      - name: Generate Runtime Artifacts
+        shell: powershell
+        run: .\scripts\generate-runtime-artifacts.ps1
+
+      - name: Collect Release Artifacts
         shell: powershell
         run: |
-          $hashFull = (Get-FileHash python-env-full.zip -Algorithm SHA256).Hash
-          "Full: $hashFull" | Out-File -Encoding ASCII hash.txt -Append
-          if ($env:PATCH_EXISTS -eq 'true') {
-            $hashPatch = (Get-FileHash patch.hdiff -Algorithm SHA256).Hash
-            "Patch: $hashPatch" | Out-File -Encoding ASCII hash.txt -Append
+          if (Test-Path $env:ARTIFACT_DIR) { Remove-Item $env:ARTIFACT_DIR -Recurse -Force }
+          New-Item -ItemType Directory -Path $env:ARTIFACT_DIR -Force | Out-Null
+
+          $artifactFiles = @(
+            "python-env-full.zip",
+            "python-engine.zip",
+            "stt-assets.zip",
+            "tts-assets.zip",
+            "hailo-addon.zip",
+            "patch.hdiff",
+            "hpatchz.exe",
+            "manifest.json",
+            "runtime-manifest.json",
+            "hash.txt"
+          )
+
+          foreach ($artifact in $artifactFiles) {
+            if (Test-Path $artifact) {
+              Move-Item -Path $artifact -Destination $env:ARTIFACT_DIR -Force
+            }
           }
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            python-env-full.zip
-            patch.hdiff
-            hpatchz.exe
-            manifest.json
-            hash.txt
+            out/python-env-full.zip
+            out/python-engine.zip
+            out/stt-assets.zip
+            out/tts-assets.zip
+            out/hailo-addon.zip
+            out/patch.hdiff
+            out/hpatchz.exe
+            out/manifest.json
+            out/runtime-manifest.json
+            out/hash.txt
           prerelease: false
           make_latest: true
         env:
