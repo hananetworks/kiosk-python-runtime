@@ -77,7 +77,7 @@ hf_repos = [
 print('Downloading HuggingFace cache for MeloTTS...')
 for repo_id in hf_repos:
     try:
-        snapshot_download(repo_id=repo_id, cache_dir=hf_home)
+        snapshot_download(repo_id=repo_id, cache_dir=hub_cache)
         print(f' - OK: {repo_id}')
     except Exception as e:
         print(f' - FAIL: {repo_id} ({e})')

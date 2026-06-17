@@ -71,4 +71,9 @@ if ($env:PATCH_EXISTS -eq "true") {
     "Patch: $hashPatch" | Add-Content -Encoding Ascii hash.txt
 }
 
-$manifest | ConvertTo-Json -Depth 5 | Out-File -Encoding utf8 runtime-manifest.json
+$manifestJson = $manifest | ConvertTo-Json -Depth 5
+[System.IO.File]::WriteAllText(
+    (Join-Path $PWD "runtime-manifest.json"),
+    $manifestJson,
+    [System.Text.UTF8Encoding]::new($false)
+)
