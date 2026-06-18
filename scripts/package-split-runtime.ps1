@@ -18,22 +18,23 @@ Pop-Location
 
 $HubDir = "tts-assets-package\huggingface\hub"
 $TtsPackages = @(
-    @{ Name = "bert-base-uncased"; Dir = "models--bert-base-uncased"; Zip = "tts-hf-bert-base-uncased.zip" },
-    @{ Name = "bert-base-multilingual-uncased"; Dir = "models--bert-base-multilingual-uncased"; Zip = "tts-hf-bert-base-multilingual-uncased.zip" },
-    @{ Name = "bert-base-japanese-v3"; Dir = "models--tohoku-nlp--bert-base-japanese-v3"; Zip = "tts-hf-bert-base-japanese-v3.zip" },
-    @{ Name = "melo-ko"; Dir = "models--myshell-ai--MeloTTS-Korean"; Zip = "tts-hf-melo-ko.zip" },
-    @{ Name = "melo-en"; Dir = "models--myshell-ai--MeloTTS-English"; Zip = "tts-hf-melo-en.zip" },
-    @{ Name = "melo-ja"; Dir = "models--myshell-ai--MeloTTS-Japanese"; Zip = "tts-hf-melo-ja.zip" },
-    @{ Name = "melo-zh"; Dir = "models--myshell-ai--MeloTTS-Chinese"; Zip = "tts-hf-melo-zh.zip" }
+    @{ Name = "bert-base-uncased"; Dirs = @("models--google-bert--bert-base-uncased", "models--bert-base-uncased"); Zip = "tts-hf-bert-base-uncased.zip" },
+    @{ Name = "bert-base-multilingual-uncased"; Dirs = @("models--google-bert--bert-base-multilingual-uncased", "models--bert-base-multilingual-uncased"); Zip = "tts-hf-bert-base-multilingual-uncased.zip" },
+    @{ Name = "bert-base-japanese-v3"; Dirs = @("models--tohoku-nlp--bert-base-japanese-v3"); Zip = "tts-hf-bert-base-japanese-v3.zip" },
+    @{ Name = "melo-ko"; Dirs = @("models--myshell-ai--MeloTTS-Korean"); Zip = "tts-hf-melo-ko.zip" },
+    @{ Name = "melo-en"; Dirs = @("models--myshell-ai--MeloTTS-English"); Zip = "tts-hf-melo-en.zip" },
+    @{ Name = "melo-ja"; Dirs = @("models--myshell-ai--MeloTTS-Japanese"); Zip = "tts-hf-melo-ja.zip" },
+    @{ Name = "melo-zh"; Dirs = @("models--myshell-ai--MeloTTS-Chinese"); Zip = "tts-hf-melo-zh.zip" }
 )
 
 Push-Location $HubDir
 foreach ($package in $TtsPackages) {
-    if (Test-Path $package.Dir) {
-        Write-Host "Packaging TTS HF cache: $($package.Name)..."
-        7z a -mx=1 "..\..\$($package.Zip)" $package.Dir
+    $sourceDir = $package.Dirs | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if ($sourceDir) {
+        Write-Host "Packaging TTS HF cache: $($package.Name) from $sourceDir..."
+        7z a -mx=1 "..\..\..\$($package.Zip)" $sourceDir
     } else {
-        Write-Host "Skipping missing TTS HF cache: $($package.Dir)"
+        Write-Host "Skipping missing TTS HF cache: $($package.Dirs -join ', ')"
     }
 }
 Pop-Location
