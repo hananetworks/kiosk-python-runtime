@@ -45,27 +45,40 @@ jobs:
           "SPEECH_ASSETS_CHANGED=$($speechChanged.ToString().ToLower())" >> $env:GITHUB_ENV
           "HAILO_ASSET_CHANGED=$($hailoChanged.ToString().ToLower())" >> $env:GITHUB_ENV
 
-      - name: Download Reusable Build Assets
-        if: env.SPEECH_ASSETS_CHANGED == 'false' && env.PREVIOUS_TAG != ''
+      - name: Download Reusable Module Assets
+        if: env.SPEECH_ASSETS_CHANGED == 'false' || env.HAILO_ASSET_CHANGED == 'false'
         shell: powershell
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; 'User-Agent' = 'GitHubActions' }
-          $release = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/${{ github.repository }}/releases/tags/$env:PREVIOUS_TAG"
-          $assetNames = @("stt-assets.zip", "tts-core-assets.zip")
-
-          foreach ($assetName in $assetNames) {
-            $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
-            if (-not $asset) {
-              Write-Error "Missing reusable build asset '$assetName' in release $env:PREVIOUS_TAG"
-              exit 1
-            }
-            Invoke-WebRequest -Headers $headers -Uri $asset.browser_download_url -OutFile $assetName
+          $release = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/${{ github.repository }}/releases/latest"
+          $assetNames = @()
+          if ($env:SPEECH_ASSETS_CHANGED -eq 'false') {
+            $assetNames += @(
+              "stt-assets.zip",
+              "tts-core-assets.zip",
+              "tts-hf-bert-base-uncased.zip",
+              "tts-hf-bert-base-multilingual-uncased.zip",
+              "tts-hf-bert-base-japanese-v3.zip",
+              "tts-hf-melo-ko.zip",
+              "tts-hf-melo-en.zip",
+              "tts-hf-melo-ja.zip",
+              "tts-hf-melo-zh.zip"
+            )
           }
-      
-      # 1. HDiffPatch Tool Setup
+          if ($env:HAILO_ASSET_CHANGED -eq 'false') {
+            $assetNames += "hailo-addon.zip"
+          }
 
+          foreach ($assetName in ($assetNames | Select-Object -Unique)) {
+            $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
+            if ($asset) {
+              Invoke-WebRequest -Headers $headers -Uri $asset.browser_download_url -OutFile $assetName
+            }
+          }
+
+      # 1. HDiffPatch Tool Setup
       - name: Download HDiffPatch Tool
         shell: powershell
         env:
@@ -154,20 +167,12 @@ jobs:
 
       # 4. Download Previous Release
       - name: Download Previous Release Asset
-        if: env.PREVIOUS_TAG != ''
+        uses: robinraju/release-downloader@v1.8
         continue-on-error: true
-        shell: powershell
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; 'User-Agent' = 'GitHubActions' }
-          $release = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/${{ github.repository }}/releases/tags/$env:PREVIOUS_TAG"
-          $asset = $release.assets | Where-Object { $_.name -eq "python-env-full.zip" } | Select-Object -First 1
-
-          if ($asset) {
-            New-Item -ItemType Directory -Path "previous_release" -Force | Out-Null
-            Invoke-WebRequest -Headers $headers -Uri $asset.browser_download_url -OutFile "previous_release\python-env-full.zip"
-          }
+        with:
+          latest: true
+          fileName: "python-env-full.zip"
+          out-file-path: "previous_release"
 
       # 5. Generate the HDiff patch
       - name: Generate HDiff Patch
@@ -200,41 +205,6 @@ jobs:
       - name: Generate Runtime Artifacts
         shell: powershell
         run: .\scripts\generate-runtime-artifacts.ps1
-
-      - name: Download Reusable Release Assets
-        if: env.PREVIOUS_TAG != '' && (env.SPEECH_ASSETS_CHANGED == 'false' || env.HAILO_ASSET_CHANGED == 'false')
-        shell: powershell
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; 'User-Agent' = 'GitHubActions' }
-          $release = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/${{ github.repository }}/releases/tags/$env:PREVIOUS_TAG"
-          $assetNames = @()
-
-          if ($env:SPEECH_ASSETS_CHANGED -eq 'false') {
-            $assetNames += @(
-              "tts-hf-bert-base-uncased.zip",
-              "tts-hf-bert-base-multilingual-uncased.zip",
-              "tts-hf-bert-base-japanese-v3.zip",
-              "tts-hf-melo-ko.zip",
-              "tts-hf-melo-en.zip",
-              "tts-hf-melo-ja.zip",
-              "tts-hf-melo-zh.zip"
-            )
-          }
-
-          if ($env:HAILO_ASSET_CHANGED -eq 'false') {
-            $assetNames += "hailo-addon.zip"
-          }
-
-          foreach ($assetName in ($assetNames | Select-Object -Unique)) {
-            $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
-            if (-not $asset) {
-              Write-Error "Missing reusable release asset '$assetName' in release $env:PREVIOUS_TAG"
-              exit 1
-            }
-            Invoke-WebRequest -Headers $headers -Uri $asset.browser_download_url -OutFile $assetName
-          }
 
       - name: Collect Release Artifacts
         shell: powershell
