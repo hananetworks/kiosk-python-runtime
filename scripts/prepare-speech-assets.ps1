@@ -66,16 +66,16 @@ for fpath in sherpa_files:
 
 hf_repos = [
     {
-        'repo_id': 'google-bert/bert-base-uncased',
-        'ignore_patterns': ['coreml/*', 'onnx/*', 'openvino/*', 'flax_model.msgpack', 'rust_model.ot', 'tf_model.h5']
+        'repo_id': 'bert-base-uncased',
+        'allow_patterns': ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.txt', 'special_tokens_map.json', 'pytorch_model.bin']
     },
     {
-        'repo_id': 'google-bert/bert-base-multilingual-uncased',
-        'ignore_patterns': ['coreml/*', 'onnx/*', 'openvino/*', 'flax_model.msgpack', 'rust_model.ot', 'tf_model.h5']
+        'repo_id': 'bert-base-multilingual-uncased',
+        'allow_patterns': ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.txt', 'special_tokens_map.json', 'pytorch_model.bin']
     },
     {
         'repo_id': 'tohoku-nlp/bert-base-japanese-v3',
-        'ignore_patterns': ['onnx/*', 'openvino/*', 'flax_model.msgpack', 'rust_model.ot', 'tf_model.h5']
+        'allow_patterns': ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.txt', 'special_tokens_map.json', 'pytorch_model.bin']
     },
     { 'repo_id': 'myshell-ai/MeloTTS-Korean' },
     { 'repo_id': 'myshell-ai/MeloTTS-English' },
@@ -87,9 +87,9 @@ print('Downloading HuggingFace cache for MeloTTS...')
 for repo in hf_repos:
     repo_id = repo['repo_id']
     kwargs = {'repo_id': repo_id, 'cache_dir': hub_cache}
-    ignore_patterns = repo.get('ignore_patterns')
-    if ignore_patterns:
-        kwargs['ignore_patterns'] = ignore_patterns
+    allow_patterns = repo.get('allow_patterns')
+    if allow_patterns:
+        kwargs['allow_patterns'] = allow_patterns
     try:
         snapshot_download(**kwargs)
         print(f' - OK: {repo_id}')
