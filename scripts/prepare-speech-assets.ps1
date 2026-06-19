@@ -65,19 +65,33 @@ for fpath in sherpa_files:
         print(f' - FAIL: {fname} ({e})')
 
 hf_repos = [
-    'bert-base-uncased',
-    'bert-base-multilingual-uncased',
-    'tohoku-nlp/bert-base-japanese-v3',
-    'myshell-ai/MeloTTS-Korean',
-    'myshell-ai/MeloTTS-English',
-    'myshell-ai/MeloTTS-Japanese',
-    'myshell-ai/MeloTTS-Chinese',
+    {
+        'repo_id': 'google-bert/bert-base-uncased',
+        'ignore_patterns': ['coreml/*', 'onnx/*', 'openvino/*', 'flax_model.msgpack', 'rust_model.ot', 'tf_model.h5']
+    },
+    {
+        'repo_id': 'google-bert/bert-base-multilingual-uncased',
+        'ignore_patterns': ['coreml/*', 'onnx/*', 'openvino/*', 'flax_model.msgpack', 'rust_model.ot', 'tf_model.h5']
+    },
+    {
+        'repo_id': 'tohoku-nlp/bert-base-japanese-v3',
+        'ignore_patterns': ['onnx/*', 'openvino/*', 'flax_model.msgpack', 'rust_model.ot', 'tf_model.h5']
+    },
+    { 'repo_id': 'myshell-ai/MeloTTS-Korean' },
+    { 'repo_id': 'myshell-ai/MeloTTS-English' },
+    { 'repo_id': 'myshell-ai/MeloTTS-Japanese' },
+    { 'repo_id': 'myshell-ai/MeloTTS-Chinese' },
 ]
 
 print('Downloading HuggingFace cache for MeloTTS...')
-for repo_id in hf_repos:
+for repo in hf_repos:
+    repo_id = repo['repo_id']
+    kwargs = {'repo_id': repo_id, 'cache_dir': hub_cache}
+    ignore_patterns = repo.get('ignore_patterns')
+    if ignore_patterns:
+        kwargs['ignore_patterns'] = ignore_patterns
     try:
-        snapshot_download(repo_id=repo_id, cache_dir=hub_cache)
+        snapshot_download(**kwargs)
         print(f' - OK: {repo_id}')
     except Exception as e:
         print(f' - FAIL: {repo_id} ({e})')
