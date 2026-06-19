@@ -4,7 +4,10 @@ Write-Host "Packaging engine runtime..."
 $EnginePackageDir = "python-engine"
 if (Test-Path $EnginePackageDir) { Remove-Item $EnginePackageDir -Recurse -Force }
 Copy-Item -Path "python-env" -Destination $EnginePackageDir -Recurse -Force
-7z a -mx=9 python-engine.zip $EnginePackageDir
+if (Test-Path "python-engine.zip") { Remove-Item "python-engine.zip" -Force }
+Push-Location $EnginePackageDir
+7z a -mx=9 "..\python-engine.zip" "*"
+Pop-Location
 
 Write-Host "Packaging STT assets..."
 Push-Location "models"

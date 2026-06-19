@@ -15,14 +15,14 @@ $hashStt = Get-RequiredHash "stt-assets.zip"
 $hashTtsCore = Get-RequiredHash "tts-core-assets.zip"
 $hashHailo = Get-RequiredHash "hailo-addon.zip"
 $ttsPackages = @(
-    @{ Key = "ttsCore"; File = "tts-core-assets.zip"; Required = $true; ExtractTo = "assets/tts"; Hash = $hashTtsCore; VersionField = "ttsCoreVersion" },
-    @{ Key = "ttsBertBaseUncased"; File = "tts-hf-bert-base-uncased.zip"; Required = $false; ExtractTo = "assets/tts/huggingface/hub"; VersionField = "ttsBertBaseUncasedVersion" },
-    @{ Key = "ttsBertBaseMultilingual"; File = "tts-hf-bert-base-multilingual-uncased.zip"; Required = $false; ExtractTo = "assets/tts/huggingface/hub"; VersionField = "ttsBertBaseMultilingualVersion" },
-    @{ Key = "ttsBertBaseJapanese"; File = "tts-hf-bert-base-japanese-v3.zip"; Required = $false; ExtractTo = "assets/tts/huggingface/hub"; VersionField = "ttsBertBaseJapaneseVersion" },
-    @{ Key = "ttsMeloKo"; File = "tts-hf-melo-ko.zip"; Required = $false; ExtractTo = "assets/tts/huggingface/hub"; VersionField = "ttsMeloKoVersion" },
-    @{ Key = "ttsMeloEn"; File = "tts-hf-melo-en.zip"; Required = $false; ExtractTo = "assets/tts/huggingface/hub"; VersionField = "ttsMeloEnVersion" },
-    @{ Key = "ttsMeloJa"; File = "tts-hf-melo-ja.zip"; Required = $false; ExtractTo = "assets/tts/huggingface/hub"; VersionField = "ttsMeloJaVersion" },
-    @{ Key = "ttsMeloZh"; File = "tts-hf-melo-zh.zip"; Required = $false; ExtractTo = "assets/tts/huggingface/hub"; VersionField = "ttsMeloZhVersion" }
+    @{ Key = "ttsCore"; File = "tts-core-assets.zip"; Required = $true; ExtractTo = "python/tts/core"; Hash = $hashTtsCore; VersionField = "ttsCoreVersion" },
+    @{ Key = "ttsBertBaseUncased"; File = "tts-hf-bert-base-uncased.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsBertBaseUncasedVersion" },
+    @{ Key = "ttsBertBaseMultilingual"; File = "tts-hf-bert-base-multilingual-uncased.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsBertBaseMultilingualVersion" },
+    @{ Key = "ttsBertBaseJapanese"; File = "tts-hf-bert-base-japanese-v3.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsBertBaseJapaneseVersion" },
+    @{ Key = "ttsMeloKo"; File = "tts-hf-melo-ko.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsMeloKoVersion" },
+    @{ Key = "ttsMeloEn"; File = "tts-hf-melo-en.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsMeloEnVersion" },
+    @{ Key = "ttsMeloJa"; File = "tts-hf-melo-ja.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsMeloJaVersion" },
+    @{ Key = "ttsMeloZh"; File = "tts-hf-melo-zh.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsMeloZhVersion" }
 )
 
 @(
@@ -34,9 +34,9 @@ $ttsPackages = @(
 ) | Set-Content -Encoding Ascii hash.txt
 
 $packageMap = [ordered]@{
-    engine = @{ required = $true; version = $releaseVersion; file = "python-engine.zip"; sha256 = $hashEngine; extractTo = "python-engine" }
-    stt    = @{ required = $true; version = $releaseVersion; file = "stt-assets.zip"; sha256 = $hashStt; extractTo = "assets/stt" }
-    hailo  = @{ required = $false; version = $releaseVersion; file = "hailo-addon.zip"; sha256 = $hashHailo; extractTo = "assets/hailo" }
+    engine = @{ required = $true; version = $releaseVersion; file = "python-engine.zip"; sha256 = $hashEngine; extractTo = "python/engine" }
+    stt    = @{ required = $true; version = $releaseVersion; file = "stt-assets.zip"; sha256 = $hashStt; extractTo = "python/stt" }
+    hailo  = @{ required = $false; version = $releaseVersion; file = "hailo-addon.zip"; sha256 = $hashHailo; extractTo = "python/hailo" }
 }
 
 $manifest = [ordered]@{
