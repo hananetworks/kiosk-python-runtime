@@ -55,7 +55,10 @@ if (Test-Path $UnidicLite) {
     }
 }
 
-if ((Test-Path $ReuseSttAssetZip) -and (Test-Path $ReuseTtsCoreAssetZip)) {
+$CanReuseSttAssets = -not [string]::IsNullOrWhiteSpace($ReuseSttAssetZip) -and (Test-Path $ReuseSttAssetZip)
+$CanReuseTtsCoreAssets = -not [string]::IsNullOrWhiteSpace($ReuseTtsCoreAssetZip) -and (Test-Path $ReuseTtsCoreAssetZip)
+
+if ($CanReuseSttAssets -and $CanReuseTtsCoreAssets) {
     Write-Host "Reusing speech assets from previous release packages..."
     $ReuseDir = ".runtime-reuse"
     if (Test-Path $ReuseDir) { Remove-Item $ReuseDir -Recurse -Force }
@@ -74,6 +77,7 @@ if ((Test-Path $ReuseSttAssetZip) -and (Test-Path $ReuseTtsCoreAssetZip)) {
     Copy-Item -Path "$TtsExtractDir\piper_models" -Destination "$TtsModelDir\piper_models" -Recurse -Force
     Copy-Item -Path "$TtsExtractDir\sherpa_models" -Destination "$TtsModelDir\sherpa_models" -Recurse -Force
 } else {
+    Write-Host "Speech asset reuse unavailable. Building speech assets from source..."
     .\scripts\prepare-speech-assets.ps1 -PythonExe $PythonExe -EnvName $EnvName
 }
 
