@@ -21,62 +21,34 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Detect Changed Modules
-        id: changed
-        shell: powershell
-        run: |
-          git fetch --force --tags
-          $currentTag = $env:GITHUB_REF_NAME
-          $previousTag = git tag --list 'env-v*' --sort=-version:refname | Where-Object { $_ -ne $currentTag } | Select-Object -First 1
+      - name: Cache STT Asset Package
+        id: cache-stt
+        uses: actions/cache@v3
+        with:
+          path: stt-assets.zip
+          key: ${{ runner.os }}-stt-assets-${{ hashFiles('models/whisper-small-int8-ov/**', 'scripts/prepare-speech-assets.ps1', 'scripts/package-split-runtime.ps1') }}
 
-          $speechChanged = $true
-          $hailoChanged = $true
-          if ($previousTag) {
-            $changedFiles = @(git diff --name-only "$previousTag..$currentTag")
-            $speechChanged = @($changedFiles | Where-Object {
-              $_ -match '^(models/whisper-small-int8-ov/|scripts/prepare-speech-assets\.ps1$|scripts/package-split-runtime\.ps1$)'
-            }).Count -gt 0
-            $hailoChanged = @($changedFiles | Where-Object {
-              $_ -match '^(models/.*\.hef$|scripts/package-hailo-addon\.ps1$)'
-            }).Count -gt 0
-          }
+      - name: Cache TTS Asset Packages
+        id: cache-tts
+        uses: actions/cache@v3
+        with:
+          path: |
+            tts-core-assets.zip
+            tts-hf-bert-base-uncased.zip
+            tts-hf-bert-base-multilingual-uncased.zip
+            tts-hf-bert-base-japanese-v3.zip
+            tts-hf-melo-ko.zip
+            tts-hf-melo-en.zip
+            tts-hf-melo-ja.zip
+            tts-hf-melo-zh.zip
+          key: ${{ runner.os }}-tts-assets-${{ hashFiles('scripts/prepare-speech-assets.ps1', 'scripts/package-split-runtime.ps1') }}
 
-          "PREVIOUS_TAG=$previousTag" >> $env:GITHUB_ENV
-          "SPEECH_ASSETS_CHANGED=$($speechChanged.ToString().ToLower())" >> $env:GITHUB_ENV
-          "HAILO_ASSET_CHANGED=$($hailoChanged.ToString().ToLower())" >> $env:GITHUB_ENV
-
-      - name: Download Reusable Module Assets
-        if: env.SPEECH_ASSETS_CHANGED == 'false' || env.HAILO_ASSET_CHANGED == 'false'
-        shell: powershell
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $headers = @{ Authorization = "Bearer $env:GH_TOKEN"; 'User-Agent' = 'GitHubActions' }
-          $release = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/${{ github.repository }}/releases/latest"
-          $assetNames = @()
-          if ($env:SPEECH_ASSETS_CHANGED -eq 'false') {
-            $assetNames += @(
-              "stt-assets.zip",
-              "tts-core-assets.zip",
-              "tts-hf-bert-base-uncased.zip",
-              "tts-hf-bert-base-multilingual-uncased.zip",
-              "tts-hf-bert-base-japanese-v3.zip",
-              "tts-hf-melo-ko.zip",
-              "tts-hf-melo-en.zip",
-              "tts-hf-melo-ja.zip",
-              "tts-hf-melo-zh.zip"
-            )
-          }
-          if ($env:HAILO_ASSET_CHANGED -eq 'false') {
-            $assetNames += "hailo-addon.zip"
-          }
-
-          foreach ($assetName in ($assetNames | Select-Object -Unique)) {
-            $asset = $release.assets | Where-Object { $_.name -eq $assetName } | Select-Object -First 1
-            if ($asset) {
-              Invoke-WebRequest -Headers $headers -Uri $asset.browser_download_url -OutFile $assetName
-            }
-          }
+      - name: Cache Hailo Asset Package
+        id: cache-hailo
+        uses: actions/cache@v3
+        with:
+          path: hailo-addon.zip
+          key: ${{ runner.os }}-hailo-assets-${{ hashFiles('models/*.hef', 'Qwen2.5-1.5B-Instruct.hef', 'scripts/package-hailo-addon.ps1') }}
 
       # 1. HDiffPatch Tool Setup
       - name: Download HDiffPatch Tool
@@ -132,7 +104,7 @@ jobs:
         shell: powershell
         run: |
           $buildArgs = @()
-          if (($env:SPEECH_ASSETS_CHANGED -eq 'false') -and (Test-Path "stt-assets.zip") -and (Test-Path "tts-core-assets.zip")) {
+          if (("${{ steps.cache-stt.outputs.cache-hit }}" -eq "true") -and ("${{ steps.cache-tts.outputs.cache-hit }}" -eq "true") -and (Test-Path "stt-assets.zip") -and (Test-Path "tts-core-assets.zip")) {
             $buildArgs += "-ReuseSttAssetZip"; $buildArgs += "stt-assets.zip"
             $buildArgs += "-ReuseTtsCoreAssetZip"; $buildArgs += "tts-core-assets.zip"
           }
@@ -154,14 +126,16 @@ jobs:
         shell: powershell
         run: |
           $packageArgs = @()
-          if ($env:SPEECH_ASSETS_CHANGED -eq 'false') {
+          if ("${{ steps.cache-stt.outputs.cache-hit }}" -eq "true" -and (Test-Path "stt-assets.zip")) {
             $packageArgs += "-SkipSttPackage"
+          }
+          if ("${{ steps.cache-tts.outputs.cache-hit }}" -eq "true" -and (Test-Path "tts-core-assets.zip")) {
             $packageArgs += "-SkipTtsPackage"
           }
           .\scripts\package-split-runtime.ps1 @packageArgs
 
       - name: Zip Hailo Addon Package
-        if: env.HAILO_ASSET_CHANGED == 'true'
+        if: steps.cache-hailo.outputs.cache-hit != 'true'
         shell: powershell
         run: .\scripts\package-hailo-addon.ps1
 
