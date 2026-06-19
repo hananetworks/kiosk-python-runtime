@@ -50,45 +50,6 @@ jobs:
           path: hailo-addon.zip
           key: ${{ runner.os }}-hailo-assets-${{ hashFiles('models/*.hef', 'Qwen2.5-1.5B-Instruct.hef', 'scripts/package-hailo-addon.ps1') }}
 
-      # 1. HDiffPatch Tool Setup
-      - name: Download HDiffPatch Tool
-        shell: powershell
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $headers = @{ Authorization = "Bearer $env:GH_TOKEN" }
-          $apiUrl = "https://api.github.com/repos/sisong/HDiffPatch/releases"
-          
-          try {
-              $releases = Invoke-RestMethod -Uri $apiUrl -Headers $headers
-          } catch {
-              Write-Error "Failed to fetch releases list: $_"
-              exit 1
-          }
-
-          $targetAsset = $null
-          $targetTag = ""
-
-          foreach ($release in $releases) {
-              $found = $release.assets | Where-Object { $_.name -like "*windows*.zip" -or $_.name -like "*win64*.zip" } | Select-Object -First 1
-              if ($found) {
-                  $targetAsset = $found
-                  $targetTag = $release.tag_name
-                  break 
-              }
-          }
-          
-          if ($null -eq $targetAsset) {
-              Write-Error "FATAL: Could not find any windows asset in recent HDiffPatch releases."
-              exit 1
-          }
-
-          $downloadUrl = $targetAsset.browser_download_url
-          Invoke-WebRequest -Uri $downloadUrl -OutFile "hdiff_tool.zip"
-          Expand-Archive -Path "hdiff_tool.zip" -DestinationPath "hdiff_tools" -Force
-          Get-ChildItem -Path "hdiff_tools" -Recurse -Filter "hdiffz.exe" | Copy-Item -Destination . -Force
-          Get-ChildItem -Path "hdiff_tools" -Recurse -Filter "hpatchz.exe" | Copy-Item -Destination . -Force
-
       - name: Cache Pip Packages
         uses: actions/cache@v3
         with:
@@ -110,18 +71,7 @@ jobs:
           }
           .\scripts\build-python-env.ps1 @buildArgs
 
-      # 3. Full Zip & Manifest
-      - name: Setup Node.js for Manifest
-        uses: actions/setup-node@v3
-        with:
-          node-version: 20
-
-      - name: Generate Manifest
-        run: node scripts/generate_manifest.js
-
-      - name: Zip NEW Full Environment
-        run: 7z a -mx=9 python-env-full.zip python-env
-
+      # 3. Runtime Packaging
       - name: Package Split Runtime
         shell: powershell
         run: |
@@ -139,43 +89,7 @@ jobs:
         shell: powershell
         run: .\scripts\package-hailo-addon.ps1
 
-      # 4. Download Previous Release
-      - name: Download Previous Release Asset
-        uses: robinraju/release-downloader@v1.8
-        continue-on-error: true
-        with:
-          latest: true
-          fileName: "python-env-full.zip"
-          out-file-path: "previous_release"
-
-      # 5. Generate the HDiff patch
-      - name: Generate HDiff Patch
-        id: diff
-        shell: powershell
-        run: |
-          $OldFile = "previous_release\python-env-full.zip"
-          $NewFile = "python-env-full.zip"
-          $PatchFile = "patch.hdiff"
-
-          if (Test-Path $OldFile) {
-            Write-Host "Found previous version. Generating diff patch..."
-            # [Fix] Add -s-64 to reduce memory pressure.
-            ./hdiffz.exe -c-zstd -s-64 -f $OldFile $NewFile $PatchFile
-          
-            if (Test-Path $PatchFile) {
-               $Size = (Get-Item $PatchFile).Length / 1MB
-               Write-Host "Patch generated! Size: $("{0:N2}" -f $Size) MB"
-               echo "PATCH_EXISTS=true" >> $env:GITHUB_ENV
-            } else {
-               Write-Host "Failed to generate patch."
-               echo "PATCH_EXISTS=false" >> $env:GITHUB_ENV
-            }
-          } else {
-            Write-Host "No previous version found."
-            echo "PATCH_EXISTS=false" >> $env:GITHUB_ENV
-          }
-
-      # 6. Upload
+      # 4. Upload
       - name: Generate Runtime Artifacts
         shell: powershell
         run: .\scripts\generate-runtime-artifacts.ps1
@@ -187,7 +101,6 @@ jobs:
           New-Item -ItemType Directory -Path $env:ARTIFACT_DIR -Force | Out-Null
 
           $artifactFiles = @(
-            "python-env-full.zip",
             "python-engine.zip",
             "stt-assets.zip",
             "tts-core-assets.zip",
@@ -199,9 +112,6 @@ jobs:
             "tts-hf-melo-ja.zip",
             "tts-hf-melo-zh.zip",
             "hailo-addon.zip",
-            "patch.hdiff",
-            "hpatchz.exe",
-            "manifest.json",
             "runtime-manifest.json",
             "hash.txt"
           )
@@ -216,7 +126,6 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            out/python-env-full.zip
             out/python-engine.zip
             out/stt-assets.zip
             out/tts-core-assets.zip
@@ -228,9 +137,6 @@ jobs:
             out/tts-hf-melo-ja.zip
             out/tts-hf-melo-zh.zip
             out/hailo-addon.zip
-            out/patch.hdiff
-            out/hpatchz.exe
-            out/manifest.json
             out/runtime-manifest.json
             out/hash.txt
           prerelease: false

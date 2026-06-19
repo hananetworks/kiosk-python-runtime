@@ -9,7 +9,6 @@ function Get-RequiredHash {
 $releaseVersion = $env:GITHUB_REF_NAME
 if ([string]::IsNullOrWhiteSpace($releaseVersion)) { $releaseVersion = "env-dev" }
 
-$hashFull = Get-RequiredHash "python-env-full.zip"
 $hashEngine = Get-RequiredHash "python-engine.zip"
 $hashStt = Get-RequiredHash "stt-assets.zip"
 $hashTtsCore = Get-RequiredHash "tts-core-assets.zip"
@@ -26,7 +25,6 @@ $ttsPackages = @(
 )
 
 @(
-    "Full: $hashFull"
     "Engine: $hashEngine"
     "STT: $hashStt"
     "TTS-CORE: $hashTtsCore"
@@ -64,11 +62,6 @@ foreach ($ttsPackage in $ttsPackages) {
         }
         $manifest[$ttsPackage.VersionField] = $releaseVersion
     }
-}
-
-if ($env:PATCH_EXISTS -eq "true") {
-    $hashPatch = Get-RequiredHash "patch.hdiff"
-    "Patch: $hashPatch" | Add-Content -Encoding Ascii hash.txt
 }
 
 $manifestJson = $manifest | ConvertTo-Json -Depth 5
