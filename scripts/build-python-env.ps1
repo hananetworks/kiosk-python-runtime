@@ -1,3 +1,8 @@
+param(
+    [string]$ReuseSttAssetZip = "",
+    [string]$ReuseTtsCoreAssetZip = ""
+)
+
 $ErrorActionPreference = "Stop"
 
 $EnvName = "python-env"
@@ -50,6 +55,26 @@ if (Test-Path $UnidicLite) {
     }
 }
 
-.\scripts\prepare-speech-assets.ps1 -PythonExe $PythonExe -EnvName $EnvName
+if ((Test-Path $ReuseSttAssetZip) -and (Test-Path $ReuseTtsCoreAssetZip)) {
+    Write-Host "Reusing speech assets from previous release packages..."
+    $ReuseDir = ".runtime-reuse"
+    if (Test-Path $ReuseDir) { Remove-Item $ReuseDir -Recurse -Force }
+    New-Item -ItemType Directory -Path $ReuseDir -Force | Out-Null
+
+    $STTModelDir = Join-Path $EnvName "models"
+    New-Item -ItemType Directory -Path $STTModelDir -Force | Out-Null
+    7z x $ReuseSttAssetZip "-o$STTModelDir" -y | Out-Null
+
+    $TtsExtractDir = Join-Path $ReuseDir "tts-core"
+    New-Item -ItemType Directory -Path $TtsExtractDir -Force | Out-Null
+    7z x $ReuseTtsCoreAssetZip "-o$TtsExtractDir" -y | Out-Null
+
+    $TtsModelDir = Join-Path $EnvName "tts_models"
+    New-Item -ItemType Directory -Path $TtsModelDir -Force | Out-Null
+    Copy-Item -Path "$TtsExtractDir\piper_models" -Destination "$TtsModelDir\piper_models" -Recurse -Force
+    Copy-Item -Path "$TtsExtractDir\sherpa_models" -Destination "$TtsModelDir\sherpa_models" -Recurse -Force
+} else {
+    .\scripts\prepare-speech-assets.ps1 -PythonExe $PythonExe -EnvName $EnvName
+}
 
 Get-ChildItem -Path $EnvName -Include "__pycache__" -Recurse -Directory | Remove-Item -Recurse -Force
