@@ -26,7 +26,14 @@ jobs:
         uses: actions/cache@v3
         with:
           path: stt-assets.zip
-          key: ${{ runner.os }}-stt-assets-${{ hashFiles('models/whisper-small-int8-ov/**', 'scripts/prepare-speech-assets.ps1', 'scripts/package-split-runtime.ps1') }}
+          key: ${{ runner.os }}-stt-assets-${{ hashFiles('models/whisper-small-int8-ov/**') }}
+
+      - name: Cache Engine Package
+        id: cache-engine
+        uses: actions/cache@v3
+        with:
+          path: python-engine.zip
+          key: ${{ runner.os }}-python-engine-${{ hashFiles('requirements.txt', 'libs/*.whl', 'scripts/build-python-env.ps1', 'scripts/package-split-runtime.ps1') }}
 
       - name: Cache TTS Asset Packages
         id: cache-tts
@@ -41,7 +48,7 @@ jobs:
             tts-hf-melo-en.zip
             tts-hf-melo-ja.zip
             tts-hf-melo-zh.zip
-          key: ${{ runner.os }}-tts-assets-${{ hashFiles('scripts/prepare-speech-assets.ps1', 'scripts/package-split-runtime.ps1') }}
+          key: ${{ runner.os }}-tts-assets-${{ hashFiles('scripts/prepare-speech-assets.ps1') }}
 
       - name: Cache Hailo Asset Package
         id: cache-hailo
@@ -53,33 +60,85 @@ jobs:
       - name: Cache Pip Packages
         uses: actions/cache@v3
         with:
-          path: |
-            ~/.cache/pip
-            wheelhouse
+          path: ~\AppData\Local\pip\Cache
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
 
+      - name: Resolve Reuse Flags
+        id: reuse-flags
+        shell: powershell
+        run: |
+          $canReuseEngine = ("${{ steps.cache-engine.outputs.cache-hit }}" -eq "true") -and (Test-Path "python-engine.zip")
+          $canReuseStt = ("${{ steps.cache-stt.outputs.cache-hit }}" -eq "true") -and (Test-Path "stt-assets.zip")
+          $ttsPackageFiles = @(
+            "tts-core-assets.zip",
+            "tts-hf-bert-base-uncased.zip",
+            "tts-hf-bert-base-multilingual-uncased.zip",
+            "tts-hf-bert-base-japanese-v3.zip",
+            "tts-hf-melo-ko.zip",
+            "tts-hf-melo-en.zip",
+            "tts-hf-melo-ja.zip",
+            "tts-hf-melo-zh.zip"
+          )
+          $canReuseTts = ("${{ steps.cache-tts.outputs.cache-hit }}" -eq "true") -and (($ttsPackageFiles | Where-Object { -not (Test-Path $_) }).Count -eq 0)
+
+          $skipBuild = $canReuseEngine -and $canReuseTts
+          $skipRuntimePackage = $canReuseEngine -and $canReuseStt -and $canReuseTts
+
+          "skip_build=$($skipBuild.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "skip_runtime_package=$($skipRuntimePackage.ToString().ToLowerInvariant())" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       # 2. Build Python Environment
       - name: Build Pure Isolated Python
+        if: steps.reuse-flags.outputs.skip_build != 'true'
         shell: powershell
         run: |
           $buildArgs = @()
-          if (("${{ steps.cache-stt.outputs.cache-hit }}" -eq "true") -and ("${{ steps.cache-tts.outputs.cache-hit }}" -eq "true") -and (Test-Path "stt-assets.zip") -and (Test-Path "tts-core-assets.zip")) {
+          $ttsPackageFiles = @(
+            "tts-core-assets.zip",
+            "tts-hf-bert-base-uncased.zip",
+            "tts-hf-bert-base-multilingual-uncased.zip",
+            "tts-hf-bert-base-japanese-v3.zip",
+            "tts-hf-melo-ko.zip",
+            "tts-hf-melo-en.zip",
+            "tts-hf-melo-ja.zip",
+            "tts-hf-melo-zh.zip"
+          )
+          if (("${{ steps.cache-engine.outputs.cache-hit }}" -eq "true") -and (Test-Path "python-engine.zip")) {
+            $buildArgs += "-ReuseEngineZip"; $buildArgs += "python-engine.zip"
+          }
+          if (("${{ steps.cache-stt.outputs.cache-hit }}" -eq "true") -and (Test-Path "stt-assets.zip")) {
             $buildArgs += "-ReuseSttAssetZip"; $buildArgs += "stt-assets.zip"
+          }
+          if (("${{ steps.cache-tts.outputs.cache-hit }}" -eq "true") -and (($ttsPackageFiles | Where-Object { -not (Test-Path $_) }).Count -eq 0)) {
             $buildArgs += "-ReuseTtsCoreAssetZip"; $buildArgs += "tts-core-assets.zip"
           }
           .\scripts\build-python-env.ps1 @buildArgs
 
       # 3. Runtime Packaging
       - name: Package Split Runtime
+        if: steps.reuse-flags.outputs.skip_runtime_package != 'true'
         shell: powershell
         run: |
           $packageArgs = @()
+          if ("${{ steps.cache-engine.outputs.cache-hit }}" -eq "true" -and (Test-Path "python-engine.zip")) {
+            $packageArgs += "-SkipEnginePackage"
+          }
           if ("${{ steps.cache-stt.outputs.cache-hit }}" -eq "true" -and (Test-Path "stt-assets.zip")) {
             $packageArgs += "-SkipSttPackage"
           }
-          if ("${{ steps.cache-tts.outputs.cache-hit }}" -eq "true" -and (Test-Path "tts-core-assets.zip")) {
+          $ttsPackageFiles = @(
+            "tts-core-assets.zip",
+            "tts-hf-bert-base-uncased.zip",
+            "tts-hf-bert-base-multilingual-uncased.zip",
+            "tts-hf-bert-base-japanese-v3.zip",
+            "tts-hf-melo-ko.zip",
+            "tts-hf-melo-en.zip",
+            "tts-hf-melo-ja.zip",
+            "tts-hf-melo-zh.zip"
+          )
+          if ("${{ steps.cache-tts.outputs.cache-hit }}" -eq "true" -and (($ttsPackageFiles | Where-Object { -not (Test-Path $_) }).Count -eq 0)) {
             $packageArgs += "-SkipTtsPackage"
           }
           .\scripts\package-split-runtime.ps1 @packageArgs
@@ -118,7 +177,7 @@ jobs:
 
           foreach ($artifact in $artifactFiles) {
             if (Test-Path $artifact) {
-              Move-Item -Path $artifact -Destination $env:ARTIFACT_DIR -Force
+              Copy-Item -Path $artifact -Destination $env:ARTIFACT_DIR -Force
             }
           }
 

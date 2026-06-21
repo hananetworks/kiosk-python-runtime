@@ -3,21 +3,27 @@ param(
     [string]$PythonExe,
 
     [Parameter(Mandatory = $true)]
-    [string]$EnvName
+    [string]$EnvName,
+
+    [switch]$SkipTtsSetup,
+
+    [switch]$SkipSttSetup
 )
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "Downloading TTS Models..."
-$ModelDir = Join-Path $EnvName "tts_models"
-$TtsAssetDir = "tts-assets-package"
-if (Test-Path $TtsAssetDir) { Remove-Item $TtsAssetDir -Recurse -Force }
-New-Item -ItemType Directory -Path "$ModelDir\piper_models" -Force | Out-Null
-New-Item -ItemType Directory -Path "$ModelDir\sherpa_models\vits-mms-tgl" -Force | Out-Null
-New-Item -ItemType Directory -Path "$TtsAssetDir\huggingface\hub" -Force | Out-Null
-New-Item -ItemType Directory -Path "$TtsAssetDir\nltk_data" -Force | Out-Null
+if (-not $SkipTtsSetup) {
+    Write-Host "Downloading TTS Models..."
+    $TtsAssetDir = "tts-assets-package"
+    if (Test-Path $TtsAssetDir) { Remove-Item $TtsAssetDir -Recurse -Force }
+    $PiperModelDir = Join-Path $TtsAssetDir "piper_models"
+    $SherpaModelDir = Join-Path $TtsAssetDir "sherpa_models\vits-mms-tgl"
+    New-Item -ItemType Directory -Path $PiperModelDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $SherpaModelDir -Force | Out-Null
+    New-Item -ItemType Directory -Path "$TtsAssetDir\huggingface\hub" -Force | Out-Null
+    New-Item -ItemType Directory -Path "$TtsAssetDir\nltk_data" -Force | Out-Null
 
-& $PythonExe -c @"
+    & $PythonExe -c @"
 import os, shutil, sys
 try:
     from huggingface_hub import hf_hub_download, snapshot_download
@@ -25,7 +31,7 @@ try:
 except ImportError:
     print('required TTS download dependencies not found'); sys.exit(1)
 
-piper_dir = r'$ModelDir\piper_models'
+piper_dir = r'$PiperModelDir'
 hf_home = r'$TtsAssetDir\huggingface'
 hub_cache = os.path.join(hf_home, 'hub')
 nltk_dir = r'$TtsAssetDir\nltk_data'
@@ -51,7 +57,7 @@ for fpath in piper_files:
     except Exception:
         print(f' - FAIL: {fname}')
 
-sherpa_dir = r'$ModelDir\sherpa_models\vits-mms-tgl'
+sherpa_dir = r'$SherpaModelDir'
 sherpa_files = ['tgl/tokens.txt', 'tgl/model.onnx']
 
 print('Downloading Sherpa models...')
@@ -104,19 +110,18 @@ for resource_name in ['averaged_perceptron_tagger_eng', 'cmudict']:
     except Exception as e:
         print(f' - FAIL: {resource_name} ({e})')
 "@
-
-Copy-Item -Path "$ModelDir\piper_models" -Destination "$TtsAssetDir\piper_models" -Recurse -Force
-Copy-Item -Path "$ModelDir\sherpa_models" -Destination "$TtsAssetDir\sherpa_models" -Recurse -Force
-
-Write-Host "Setting up NPU STT Models..."
-$STTModelDir = Join-Path $EnvName "models"
-New-Item -ItemType Directory -Path $STTModelDir -Force | Out-Null
-
-$OpenVinoModelDir = "models\whisper-small-int8-ov"
-if (Test-Path $OpenVinoModelDir) {
-    New-Item -ItemType Directory -Path "$STTModelDir\whisper-small-int8-ov" -Force | Out-Null
-    Copy-Item -Path "$OpenVinoModelDir\*" -Destination "$STTModelDir\whisper-small-int8-ov" -Recurse -Force
-    Write-Host "  -> Copied OpenVINO STT model assets: whisper-small-int8-ov"
 } else {
-    Write-Host "Warning: 'models\whisper-small-int8-ov' not found. Skipping OpenVINO model copy."
+    Write-Host "Skipping TTS model setup. Reusing cached TTS assets."
+}
+
+if (-not $SkipSttSetup) {
+    Write-Host "Checking NPU STT model assets..."
+    $OpenVinoModelDir = "models\whisper-small-int8-ov"
+    if (Test-Path $OpenVinoModelDir) {
+        Write-Host "  -> Found OpenVINO STT model assets: whisper-small-int8-ov"
+    } else {
+        Write-Host "Warning: 'models\whisper-small-int8-ov' not found. Skipping OpenVINO model copy."
+    }
+} else {
+    Write-Host "Skipping STT model setup. Reusing cached STT assets."
 }
