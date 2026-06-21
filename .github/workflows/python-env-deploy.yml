@@ -2,6 +2,8 @@ name: Deploy Python Environment (Diff Patch)
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'env-v*'
   workflow_dispatch:
@@ -150,10 +152,12 @@ jobs:
 
       # 4. Upload
       - name: Generate Runtime Artifacts
+        if: startsWith(github.ref, 'refs/tags/env-v')
         shell: powershell
         run: .\scripts\generate-runtime-artifacts.ps1
 
       - name: Collect Release Artifacts
+        if: startsWith(github.ref, 'refs/tags/env-v')
         shell: powershell
         run: |
           if (Test-Path $env:ARTIFACT_DIR) { Remove-Item $env:ARTIFACT_DIR -Recurse -Force }
@@ -182,6 +186,7 @@ jobs:
           }
 
       - name: Upload to Release
+        if: startsWith(github.ref, 'refs/tags/env-v')
         uses: softprops/action-gh-release@v1
         with:
           files: |
