@@ -72,12 +72,12 @@ if ($CanReuseSttAssets -or $CanReuseTtsCoreAssets) {
 
 if ($ShouldPrepareSpeechAssets) {
     Write-Host "Building missing speech assets from source..."
-    $prepareArgs = @(
-        "-PythonExe", $PythonExe,
-        "-EnvName", $EnvName
-    )
-    if ($CanReuseTtsCoreAssets) { $prepareArgs += "-SkipTtsSetup" }
-    if ($CanReuseSttAssets) { $prepareArgs += "-SkipSttSetup" }
+    $prepareArgs = @{
+        PythonExe = $PythonExe
+        EnvName = $EnvName
+    }
+    if ($CanReuseTtsCoreAssets) { $prepareArgs.SkipTtsSetup = $true }
+    if ($CanReuseSttAssets) { $prepareArgs.SkipSttSetup = $true }
     .\scripts\prepare-speech-assets.ps1 @prepareArgs
 }
 
