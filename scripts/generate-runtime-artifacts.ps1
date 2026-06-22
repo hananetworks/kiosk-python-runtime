@@ -70,3 +70,9 @@ $manifestJson = $manifest | ConvertTo-Json -Depth 5
     $manifestJson,
     [System.Text.UTF8Encoding]::new($false)
 )
+
+$manifestPath = Join-Path $PWD "runtime-manifest.json"
+$manifestSha256Path = Join-Path $PWD "runtime-manifest.json.sha256"
+$manifestHash = Get-RequiredHash $manifestPath
+
+"$manifestHash  runtime-manifest.json" | Set-Content -Path $manifestSha256Path -Encoding Ascii

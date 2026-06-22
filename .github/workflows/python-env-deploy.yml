@@ -176,6 +176,7 @@ jobs:
             "tts-hf-melo-zh.zip",
             "hailo-addon.zip",
             "runtime-manifest.json",
+            "runtime-manifest.json.sha256",
             "hash.txt"
           )
 
@@ -202,6 +203,7 @@ jobs:
             out/tts-hf-melo-zh.zip
             out/hailo-addon.zip
             out/runtime-manifest.json
+            out/runtime-manifest.json.sha256
             out/hash.txt
           prerelease: false
         env:

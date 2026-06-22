@@ -1,0 +1,456 @@
+런타임 분리 구조 초안
+======================
+
+1. 목표
+- 현재 런타임을 엔진, STT 자산, TTS 자산, Hailo 추가 패키지로 분리한다.
+- GitHub Actions 빌드 시간을 줄인다.
+- 모델만 바꿀 때 전체 Python 런타임을 다시 빌드하지 않도록 한다.
+- 롤백 범위를 작고 예측 가능하게 유지한다.
+
+
+2. 배경
+- `cheonan-kiosk`에는 실제 Electron/React/Python worker 실행 코드가 있다.
+- `kiosk-python-runtime`은 키오스크에 배포되는 Python 실행환경 묶음 역할에 가깝다.
+- 현재는 엔진 코드, 모델, 선택 자산, Hailo 관련 요소가 너무 강하게 한 덩어리로 묶여 있다.
+- 이 구조 때문에 CI가 오래 걸리고, 모델 교체 비용이 크다.
+
+
+3. 목표 패키지 구조
+
+3.1 엔진 패키지
+- 예시 이름: `python-engine.zip`
+- 포함:
+  - embedded Python
+  - 설치된 Python 패키지
+  - FastAPI/uvicorn 런타임
+  - worker 코드
+  - OpenVINO/Google STT/TTS/Hailo 관련 코드 경로
+- 제외:
+  - OpenVINO STT 모델 파일
+  - MeloTTS Hugging Face 캐시
+  - Piper/Sherpa 모델 파일
+  - Hailo wheel 및 Hailo 모델 자산
+
+3.2 STT 자산 패키지
+- 예시 이름: `stt-assets.zip`
+- 포함:
+  - `models/whisper-small-int8-ov/*`
+- 목적:
+  - STT 모델을 엔진과 독립적으로 교체 가능하게 한다.
+
+3.3 TTS 자산 패키지
+- 예시 이름: `tts-assets.zip`
+- 포함:
+  - MeloTTS용 Hugging Face 캐시
+  - Piper 모델 파일
+  - Sherpa 모델 파일
+  - TTS 런타임에 필요한 `nltk_data`
+- 목적:
+  - TTS 데이터를 엔진과 독립적으로 교체 가능하게 한다.
+
+3.4 Hailo 추가 패키지
+- 예시 이름: `hailo-addon.zip`
+- 포함:
+  - HailoRT wheel
+  - Hailo HEF/모델
+  - Hailo 전용 런타임 리소스
+- 목적:
+  - 기본 설치에서는 제외
+  - 필요할 때만 선택적으로 설치
+
+
+4. 로컬 설치 디렉터리 구조 초안
+
+MyKiosk/
+  python-engine/
+    kiosk_python.exe
+    Lib/
+    version.txt
+
+  assets/
+    stt/
+      version.txt
+      whisper-small-int8-ov/
+
+    tts/
+      version.txt
+      hf_cache/
+      piper_models/
+      sherpa_models/
+      nltk_data/
+
+    hailo/
+      version.txt
+      wheels/
+      models/
+      resources/
+
+  manifests/
+    runtime-manifest.json
+
+  updates/
+    python-engine.zip
+    stt-assets.zip
+    tts-assets.zip
+    hailo-addon.zip
+
+
+5. manifest 초안
+
+주요 필드 예시:
+- `manifestVersion`
+- `engineVersion`
+- `sttVersion`
+- `ttsVersion`
+- `hailoVersion`
+- 패키지 파일명
+- 패키지 sha256 해시
+- 호환성 매트릭스
+
+예시 개념:
+{
+  "manifestVersion": 1,
+  "engineVersion": "engine-v1.0.0",
+  "sttVersion": "stt-v1.0.0",
+  "ttsVersion": "tts-v1.0.0",
+  "hailoVersion": "hailo-v1.0.0",
+  "packages": {
+    "engine": { "required": true,  "file": "python-engine.zip", "sha256": "..." },
+    "stt":    { "required": true,  "file": "stt-assets.zip",   "sha256": "..." },
+    "tts":    { "required": true,  "file": "tts-assets.zip",   "sha256": "..." },
+    "hailo":  { "required": false, "file": "hailo-addon.zip",  "sha256": "..." }
+  },
+  "compatibility": {
+    "engine-v1.0.0": {
+      "stt":   ["stt-v1.0.0"],
+      "tts":   ["tts-v1.0.0"],
+      "hailo": ["hailo-v1.0.0"]
+    }
+  }
+}
+
+
+6. bootstrap 동작 원칙
+- Electron bootstrap은 더 이상 하나의 full runtime zip만 가정하면 안 된다.
+- 새 bootstrap 순서:
+  1. runtime manifest 읽기
+  2. 엔진 패키지 확인
+  3. STT 자산 패키지 확인
+  4. TTS 자산 패키지 확인
+  5. Hailo가 활성화된 경우에만 Hailo 추가 패키지 확인
+  6. 누락되었거나 버전이 맞지 않는 패키지만 다운로드
+  7. sha256 검증
+  8. 압축 해제
+  9. Python 서버 실행
+
+- 필수 패키지:
+  - engine
+  - stt
+  - tts
+
+- 선택 패키지:
+  - hailo
+
+- 버전이 호환되지 않으면:
+  - 즉시 실패해야 한다.
+  - 조용히 부분 실행되면 안 된다.
+
+
+7. cheonan-kiosk 쪽 변경 범위
+
+7.1 반드시 바뀌는 파일
+- `electron/src/pythonBootstrap.js`
+  - 단일 zip 기준 로직을 다중 패키지 기준 로직으로 전환
+  - engine/stt/tts/hailo 버전을 각각 관리
+
+- `electron/workers/stt/openvino_engine.py`
+  - 모델 경로를 `assets/stt` 기준으로 해석
+
+- `electron/workers/tts/runtime_init.py`
+  - HF 캐시, `nltk_data`, TTS 자산 경로를 `assets/tts` 기준으로 해석
+
+7.2 바뀔 가능성이 높은 파일
+- `electron/workers/api_server.py`
+  - Hailo 선택 로딩 확장 포인트
+
+- TTS 엔진 및 helper 파일
+  - Piper/Sherpa/Melo 자산 경로 규칙 정리
+
+
+8. kiosk-python-runtime 쪽 변경 범위
+
+핵심 파일:
+- `.github/workflows/python-env-deploy.yml`
+
+필수 변경 사항:
+- 단일 `python-env-full.zip` 중심 구조를 중단
+- 아래 산출물을 생성:
+  - `python-engine.zip`
+  - `stt-assets.zip`
+  - `tts-assets.zip`
+  - `hailo-addon.zip`
+  - `runtime-manifest.json`
+
+
+9. 버전 정책
+- `engineVersion`
+  - Python 런타임, 패키지, worker 코드가 바뀔 때 증가
+
+- `sttVersion`
+  - OpenVINO STT 모델 자산이 바뀔 때 증가
+
+- `ttsVersion`
+  - Melo/Piper/Sherpa/nltk 자산이 바뀔 때 증가
+
+- `hailoVersion`
+  - Hailo wheel 또는 Hailo 모델 리소스가 바뀔 때 증가
+
+
+10. CI 분리 정책
+- `build-engine` 작업
+  - Python 런타임 빌드 및 엔진 패키징
+
+- `build-stt-assets` 작업
+  - OpenVINO STT 자산만 패키징
+
+- `build-tts-assets` 작업
+  - Melo HF 캐시, Piper, Sherpa, `nltk_data` 패키징
+
+- `build-hailo-addon` 작업
+  - Hailo 전용 자산만 패키징
+
+- `build-manifest` 작업
+  - 해시 계산
+  - 호환성 메타데이터 작성
+
+
+11. 롤백 및 fallback 정책
+
+11.1 롤백
+- 엔진 롤백은 독립적으로 가능해야 한다.
+- STT 롤백은 독립적으로 가능해야 한다.
+- TTS 롤백은 독립적으로 가능해야 한다.
+- Hailo 롤백은 독립적으로 가능해야 한다.
+
+11.2 fallback
+- 전환 초기에는 임시로 단일 패키지 fallback을 유지할 수 있다.
+- 분리 구조가 안정화되면 legacy fallback을 제거한다.
+
+
+12. 권장 전환 순서
+
+1단계
+- 패키지 이름 확정
+- 설치 경로 확정
+- manifest 구조 확정
+- bootstrap 규칙 확정
+
+2단계
+- engine + STT 자산 먼저 분리
+
+3단계
+- TTS 자산 분리
+
+4단계
+- Hailo 추가 패키지 분리
+
+5단계
+- 기존 단일 full runtime fallback 제거
+
+6단계
+- 불필요한 의존성 및 자산 축소
+
+
+13. 리스크 메모
+- bootstrap 로직 복잡도가 증가한다.
+- 버전 호환성 관리를 엄격하게 해야 한다.
+- TTS 분리는 STT 분리보다 민감하다.
+- Hailo는 기본 경로를 흔들지 않도록 반드시 선택 패키지로 유지하는 편이 좋다.
+
+
+14. 실무적 결론
+- 최종 목표 구조는 아래 4분리가 적절하다.
+  - engine
+  - stt
+  - tts
+  - hailo-addon
+- 이 구조가 아래 요구사항의 균형이 가장 좋다.
+  - 빠른 CI
+  - 독립적인 모델 업데이트
+  - 작은 롤백 범위
+  - Hailo를 유지하되 기본 필수로 만들지 않음
+
+
+15. manifest 상세 규칙 초안
+- manifest는 분리된 런타임 패키지의 단일 기준 파일이다.
+- 앱은 manifest만 보고 아래를 판단해야 한다.
+  - 무엇이 필수인지
+  - 어떤 버전이 설치되어야 하는지
+  - 어떤 파일을 내려받아야 하는지
+  - 어떤 버전 조합이 허용되는지
+
+권장 파일명:
+- `runtime-manifest.json`
+
+권장 위치:
+- 릴리스 산출물에 포함
+- 로컬 설치 후 `MyKiosk/manifests/runtime-manifest.json`
+
+권장 최상위 필드:
+- `manifestVersion`
+- `releaseChannel`
+- `generatedAt`
+- `engineVersion`
+- `sttVersion`
+- `ttsVersion`
+- `hailoVersion`
+- `packages`
+- `compatibility`
+- `bootstrapPolicy`
+
+`packages` 필드에는 아래를 넣는다.
+- 패키지 필수 여부
+- 버전
+- 파일명
+- sha256
+- 압축 해제 대상 경로
+
+예시 개념:
+- engine: `python-engine.zip` -> `python-engine`
+- stt: `stt-assets.zip` -> `assets/stt`
+- tts: `tts-assets.zip` -> `assets/tts`
+- hailo: `hailo-addon.zip` -> `assets/hailo`
+
+호환성 규칙:
+- 항상 `engineVersion`이 기준
+- 엔진 버전별로 허용되는 `stt/tts/hailo` 버전을 명시
+- bootstrap은 현재 설치된 조합이 `compatibility`에 없으면 부팅을 차단해야 함
+
+
+16. bootstrap 설계 요약
+- `pythonBootstrap.js`는 더 이상 단일 full runtime zip만 가정하면 안 된다.
+- 새 bootstrap 책임은 아래와 같다.
+  - manifest 읽기
+  - 로컬 설치 상태 확인
+  - 필요한 패키지 계산
+  - 다운로드
+  - sha256 검증
+  - 압축 해제
+  - version.txt 기록
+  - 최종 호환성 검사
+  - Python 실행파일 경로 반환
+
+권장 동작 순서:
+1. manifest 확보
+2. engine 확인
+3. stt 확인
+4. tts 확인
+5. Hailo 활성화 시에만 hailo 확인
+6. 누락 또는 버전 불일치 패키지만 다운로드
+7. 해시 검증
+8. 압축 해제
+9. 호환성 재검사
+10. Python 서버 부팅
+
+권장 로컬 버전 파일:
+- `python-engine/version.txt`
+- `assets/stt/version.txt`
+- `assets/tts/version.txt`
+- `assets/hailo/version.txt`
+
+권장 반환 정보:
+- `pythonExePath`
+- 설치된 `engine/stt/tts/hailo` 버전 정보
+
+
+17. fallback 정책 초안
+- 결론:
+  - 초기 전환기에는 유지
+  - 장기적으로는 제거
+
+fallback 허용 상황:
+- manifest 다운로드 실패
+- 새 구조 패키지 일부 누락
+- 초기 전환 과정의 bootstrap 오류
+
+fallback 비허용 상황:
+- sha256 불일치
+- compatibility 불일치
+- 필수 패키지 손상
+
+이유:
+- 무결성 또는 호환성 문제가 있는데 fallback으로 억지 부팅하면 더 위험하다.
+
+권장 정책:
+- `allowLegacyFallback = true`일 때만 시도
+- 새 구조 실패 시 기존 단일 설치본이 이미 있으면 그 경로를 재사용
+- 기존 설치본이 없으면 실패
+
+fallback 제거 시점:
+- 사내 설치/검증이 여러 차례 안정적으로 통과한 뒤
+- 모델 교체 배포도 한 차례 이상 검증된 뒤
+
+
+18. 패키지 이름 및 버전 규칙
+권장 패키지 파일명:
+- `python-engine.zip`
+- `stt-assets.zip`
+- `tts-assets.zip`
+- `hailo-addon.zip`
+- `runtime-manifest.json`
+
+파일명에 버전을 넣지 않는 이유:
+- bootstrap 구현이 단순해진다.
+- 실제 버전 관리는 manifest와 `version.txt`로 하는 편이 낫다.
+- 업데이트 캐시 파일명도 고정할 수 있다.
+
+권장 버전 문자열 형식:
+- `engine-vMAJOR.MINOR.PATCH`
+- `stt-vMAJOR.MINOR.PATCH`
+- `tts-vMAJOR.MINOR.PATCH`
+- `hailo-vMAJOR.MINOR.PATCH`
+
+예시:
+- `engine-v1.0.0`
+- `stt-v1.0.0`
+- `tts-v1.0.0`
+- `hailo-v1.0.0`
+
+버전 증가 기준:
+- engine
+  - Python 패키지 변경
+  - worker 코드 변경
+  - 런타임 동작 변경
+- stt
+  - OpenVINO 모델 변경
+  - STT 자산 구조 변경
+- tts
+  - Melo HF 캐시 변경
+  - Piper/Sherpa 모델 변경
+  - `nltk_data` 변경
+- hailo
+  - Hailo wheel 변경
+  - Hailo 모델/HEF 변경
+  - Hailo 전용 리소스 변경
+
+
+19. 1차 적용 전 확정된 운영 원칙
+- 패키지 이름은 고정 파일명 사용
+- 버전은 manifest와 `version.txt`로 관리
+- 필수 패키지는 `engine/stt/tts`
+- Hailo는 optional
+- compatibility는 engine 기준으로 강제
+- fallback은 전환 초기만 유지
+
+
+20. 다음 구현 단계
+- 1차 적용은 아래 3개 축부터 시작하는 것이 가장 안전하다.
+  - `kiosk-python-runtime/.github/workflows/python-env-deploy.yml`
+  - `cheonan-kiosk/kiosk/electron/src/pythonBootstrap.js`
+  - `cheonan-kiosk/kiosk/electron/workers/stt/openvino_engine.py`
+
+- 그 다음 순서:
+  1. `engine + stt` 분리
+  2. `tts` 분리
+  3. `hailo-addon` 분리
+  4. legacy full runtime fallback 제거
