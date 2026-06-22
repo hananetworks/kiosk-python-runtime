@@ -12,7 +12,19 @@ if ($SkipEnginePackage) {
 } else {
     if (Test-Path "python-engine.zip") { Remove-Item "python-engine.zip" -Force }
     Push-Location "python-env"
-    7z a -mx=9 "..\python-engine.zip" "*" -xr!models -xr!tts_models
+    # Exclude only archive-root runtime asset folders. Recursive excludes like
+    # -xr!models also strip package paths such as Lib/site-packages/torchaudio/models.
+    $engineZipArgs = @(
+        "a",
+        "-mx=9",
+        "..\python-engine.zip",
+        "*",
+        "-x!models",
+        "-x!models\*",
+        "-x!tts_models",
+        "-x!tts_models\*"
+    )
+    & 7z @engineZipArgs
     Pop-Location
 }
 
