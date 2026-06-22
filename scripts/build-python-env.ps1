@@ -54,10 +54,16 @@ if (-not [string]::IsNullOrWhiteSpace($ReuseEngineZip) -and (Test-Path $ReuseEng
     $SitePackages = "$EnvName\Lib\site-packages"
     $UnidicLite = "$SitePackages\unidic_lite"
     $Unidic = "$SitePackages\unidic"
+    $UnidicLiteDicDir = "$UnidicLite\dicdir"
+    $UnidicDicDir = "$Unidic\dicdir"
+    $UnidicMecabRc = "$UnidicDicDir\mecabrc"
     if (Test-Path $UnidicLite) {
         if (-not (Test-Path $Unidic)) {
             Copy-Item -Path $UnidicLite -Destination $Unidic -Recurse -Force
             Write-Host "  -> Copied 'unidic_lite' to 'unidic' successfully."
+        } elseif ((Test-Path $UnidicLiteDicDir) -and (-not (Test-Path $UnidicMecabRc))) {
+            Copy-Item -Path $UnidicLiteDicDir -Destination $UnidicDicDir -Recurse -Force
+            Write-Host "  -> Repaired missing 'unidic\\dicdir' from 'unidic_lite'."
         }
     }
 }
