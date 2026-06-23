@@ -6,6 +6,9 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "get-runtime-model-layout.ps1")
+$Layout = Get-RuntimeModelLayout
+
 Write-Host "Packaging engine runtime..."
 if ($SkipEnginePackage) {
     Write-Host "Reusing previous python-engine.zip"
@@ -32,9 +35,14 @@ Write-Host "Packaging STT assets..."
 if ($SkipSttPackage) {
     Write-Host "Reusing previous stt-assets.zip"
 } else {
-    Push-Location "models"
-    7z a -mx=9 "..\stt-assets.zip" "whisper-small-int8-ov"
-    Pop-Location
+    if (Test-Path "stt-assets.zip") { Remove-Item "stt-assets.zip" -Force }
+    if ($Layout.HasLocalStt) {
+        Push-Location $Layout.LocalSttRoot
+        7z a -mx=9 "..\..\stt-assets.zip" "*"
+        Pop-Location
+    } else {
+        throw "STT model source not found in runtime-models\\stt."
+    }
 }
 
 Write-Host "Packaging TTS assets..."
@@ -46,25 +54,26 @@ if ($SkipTtsPackage) {
     Pop-Location
 
     $HubDir = "tts-assets-package\huggingface\hub"
-    $TtsPackages = @(
-        @{ Name = "bert-base-uncased"; Dirs = @("models--google-bert--bert-base-uncased", "models--bert-base-uncased"); Zip = "tts-hf-bert-base-uncased.zip" },
-        @{ Name = "bert-base-multilingual-uncased"; Dirs = @("models--google-bert--bert-base-multilingual-uncased", "models--bert-base-multilingual-uncased"); Zip = "tts-hf-bert-base-multilingual-uncased.zip" },
-        @{ Name = "bert-base-japanese-v3"; Dirs = @("models--tohoku-nlp--bert-base-japanese-v3"); Zip = "tts-hf-bert-base-japanese-v3.zip" },
-        @{ Name = "melo-ko"; Dirs = @("models--myshell-ai--MeloTTS-Korean"); Zip = "tts-hf-melo-ko.zip" },
-        @{ Name = "melo-en"; Dirs = @("models--myshell-ai--MeloTTS-English"); Zip = "tts-hf-melo-en.zip" },
-        @{ Name = "melo-ja"; Dirs = @("models--myshell-ai--MeloTTS-Japanese"); Zip = "tts-hf-melo-ja.zip" },
-        @{ Name = "melo-zh"; Dirs = @("models--myshell-ai--MeloTTS-Chinese"); Zip = "tts-hf-melo-zh.zip" }
-    )
-
-    Push-Location $HubDir
-    foreach ($package in $TtsPackages) {
-        $sourceDir = $package.Dirs | Where-Object { Test-Path $_ } | Select-Object -First 1
-        if ($sourceDir) {
-            Write-Host "Packaging TTS HF cache: $($package.Name) from $sourceDir..."
-            7z a -mx=1 "..\..\..\$($package.Zip)" $sourceDir
-        } else {
-            Write-Host "Skipping missing TTS HF cache: $($package.Dirs -join ', ')"
+    if ($Layout.HasLocalTtsHfPackages) {
+        foreach ($package in @($Layout.LocalTtsHfPackages)) {
+            if (Test-Path $package.File) { Remove-Item $package.File -Force }
+            Push-Location $package.SourceDir
+            Write-Host "Packaging local TTS HF asset: $($package.File)..."
+            7z a -mx=1 "..\..\..\$($package.File)" "*"
+            Pop-Location
         }
+    } else {
+        Push-Location $HubDir
+        foreach ($package in @($Layout.LegacyTtsHfPackages)) {
+            $sourceDir = $package.CacheDirs | Where-Object { Test-Path $_ } | Select-Object -First 1
+            if ($sourceDir) {
+                if (Test-Path "..\..\..\$($package.File)") { Remove-Item "..\..\..\$($package.File)" -Force }
+                Write-Host "Packaging TTS HF cache: $($package.Name) from $sourceDir..."
+                7z a -mx=1 "..\..\..\$($package.File)" $sourceDir
+            } else {
+                Write-Host "Skipping missing TTS HF cache: $($package.CacheDirs -join ', ')"
+            }
+        }
+        Pop-Location
     }
-    Pop-Location
 }

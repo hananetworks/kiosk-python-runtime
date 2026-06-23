@@ -1,5 +1,7 @@
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "get-runtime-model-layout.ps1")
+
 function Get-RequiredHash {
     param([string]$Path)
 
@@ -9,20 +11,32 @@ function Get-RequiredHash {
 $releaseVersion = $env:GITHUB_REF_NAME
 if ([string]::IsNullOrWhiteSpace($releaseVersion)) { $releaseVersion = "env-dev" }
 
+$ttsPackages = @(
+    @{ Key = "ttsCore"; File = "tts-core-assets.zip"; Required = $true; ExtractTo = "python/tts/core"; VersionField = "ttsCoreVersion" }
+)
+
+foreach ($hfZip in @(Get-ChildItem -Path $PWD -File -Filter "tts-hf-*.zip" | Sort-Object Name)) {
+    $key = Convert-TtsPackageNameToKey -Name $hfZip.Name
+    $ttsPackages += @{
+        Key = $key
+        File = $hfZip.Name
+        Required = $false
+        ExtractTo = "python/tts/hf/hub"
+        VersionField = "$($key)Version"
+    }
+}
+
 $hashEngine = Get-RequiredHash "python-engine.zip"
 $hashStt = Get-RequiredHash "stt-assets.zip"
 $hashTtsCore = Get-RequiredHash "tts-core-assets.zip"
 $hashHailo = Get-RequiredHash "hailo-addon.zip"
-$ttsPackages = @(
-    @{ Key = "ttsCore"; File = "tts-core-assets.zip"; Required = $true; ExtractTo = "python/tts/core"; Hash = $hashTtsCore; VersionField = "ttsCoreVersion" },
-    @{ Key = "ttsBertBaseUncased"; File = "tts-hf-bert-base-uncased.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsBertBaseUncasedVersion" },
-    @{ Key = "ttsBertBaseMultilingual"; File = "tts-hf-bert-base-multilingual-uncased.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsBertBaseMultilingualVersion" },
-    @{ Key = "ttsBertBaseJapanese"; File = "tts-hf-bert-base-japanese-v3.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsBertBaseJapaneseVersion" },
-    @{ Key = "ttsMeloKo"; File = "tts-hf-melo-ko.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsMeloKoVersion" },
-    @{ Key = "ttsMeloEn"; File = "tts-hf-melo-en.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsMeloEnVersion" },
-    @{ Key = "ttsMeloJa"; File = "tts-hf-melo-ja.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsMeloJaVersion" },
-    @{ Key = "ttsMeloZh"; File = "tts-hf-melo-zh.zip"; Required = $false; ExtractTo = "python/tts/hf/hub"; VersionField = "ttsMeloZhVersion" }
-)
+$ttsPackages = foreach ($ttsPackage in $ttsPackages) {
+    $package = $ttsPackage.Clone()
+    if ($package.Key -eq "ttsCore") {
+        $package.Hash = $hashTtsCore
+    }
+    $package
+}
 
 @(
     "Engine: $hashEngine"

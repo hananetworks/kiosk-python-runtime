@@ -28,7 +28,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: stt-assets.zip
-          key: ${{ runner.os }}-stt-assets-${{ hashFiles('models/whisper-small-int8-ov/**') }}
+          key: ${{ runner.os }}-stt-assets-${{ hashFiles('runtime-models/stt/**', 'scripts/package-split-runtime.ps1', 'scripts/get-runtime-model-layout.ps1') }}
 
       - name: Cache Engine Package
         id: cache-engine
@@ -43,21 +43,15 @@ jobs:
         with:
           path: |
             tts-core-assets.zip
-            tts-hf-bert-base-uncased.zip
-            tts-hf-bert-base-multilingual-uncased.zip
-            tts-hf-bert-base-japanese-v3.zip
-            tts-hf-melo-ko.zip
-            tts-hf-melo-en.zip
-            tts-hf-melo-ja.zip
-            tts-hf-melo-zh.zip
-          key: ${{ runner.os }}-tts-assets-${{ hashFiles('scripts/prepare-speech-assets.ps1') }}
+            tts-hf-*.zip
+          key: ${{ runner.os }}-tts-assets-${{ hashFiles('scripts/prepare-speech-assets.ps1', 'scripts/package-split-runtime.ps1', 'scripts/get-runtime-model-layout.ps1', 'runtime-models/tts/**', 'runtime-models/speech-assets.json') }}
 
       - name: Cache Hailo Asset Package
         id: cache-hailo
         uses: actions/cache@v3
         with:
           path: hailo-addon.zip
-          key: ${{ runner.os }}-hailo-assets-${{ hashFiles('models/*.hef', 'Qwen2.5-1.5B-Instruct.hef', 'scripts/package-hailo-addon.ps1') }}
+          key: ${{ runner.os }}-hailo-assets-${{ hashFiles('runtime-models/hailo/**', 'scripts/package-hailo-addon.ps1', 'scripts/get-runtime-model-layout.ps1') }}
 
       - name: Cache Pip Packages
         uses: actions/cache@v3
@@ -71,18 +65,11 @@ jobs:
         id: reuse-flags
         shell: powershell
         run: |
+          . .\scripts\get-runtime-model-layout.ps1
+          $layout = Get-RuntimeModelLayout -RepoRoot (Get-Location)
           $canReuseEngine = ("${{ steps.cache-engine.outputs.cache-hit }}" -eq "true") -and (Test-Path "python-engine.zip")
           $canReuseStt = ("${{ steps.cache-stt.outputs.cache-hit }}" -eq "true") -and (Test-Path "stt-assets.zip")
-          $ttsPackageFiles = @(
-            "tts-core-assets.zip",
-            "tts-hf-bert-base-uncased.zip",
-            "tts-hf-bert-base-multilingual-uncased.zip",
-            "tts-hf-bert-base-japanese-v3.zip",
-            "tts-hf-melo-ko.zip",
-            "tts-hf-melo-en.zip",
-            "tts-hf-melo-ja.zip",
-            "tts-hf-melo-zh.zip"
-          )
+          $ttsPackageFiles = Get-ExpectedTtsAssetFiles -Layout $layout
           $canReuseTts = ("${{ steps.cache-tts.outputs.cache-hit }}" -eq "true") -and (($ttsPackageFiles | Where-Object { -not (Test-Path $_) }).Count -eq 0)
 
           $skipBuild = $canReuseEngine -and $canReuseTts
@@ -96,17 +83,10 @@ jobs:
         if: steps.reuse-flags.outputs.skip_build != 'true'
         shell: powershell
         run: |
+          . .\scripts\get-runtime-model-layout.ps1
+          $layout = Get-RuntimeModelLayout -RepoRoot (Get-Location)
           $buildArgs = @()
-          $ttsPackageFiles = @(
-            "tts-core-assets.zip",
-            "tts-hf-bert-base-uncased.zip",
-            "tts-hf-bert-base-multilingual-uncased.zip",
-            "tts-hf-bert-base-japanese-v3.zip",
-            "tts-hf-melo-ko.zip",
-            "tts-hf-melo-en.zip",
-            "tts-hf-melo-ja.zip",
-            "tts-hf-melo-zh.zip"
-          )
+          $ttsPackageFiles = Get-ExpectedTtsAssetFiles -Layout $layout
           if (("${{ steps.cache-engine.outputs.cache-hit }}" -eq "true") -and (Test-Path "python-engine.zip")) {
             $buildArgs += "-ReuseEngineZip"; $buildArgs += "python-engine.zip"
           }
@@ -123,6 +103,8 @@ jobs:
         if: steps.reuse-flags.outputs.skip_runtime_package != 'true'
         shell: powershell
         run: |
+          . .\scripts\get-runtime-model-layout.ps1
+          $layout = Get-RuntimeModelLayout -RepoRoot (Get-Location)
           $packageArgs = @()
           if ("${{ steps.cache-engine.outputs.cache-hit }}" -eq "true" -and (Test-Path "python-engine.zip")) {
             $packageArgs += "-SkipEnginePackage"
@@ -130,16 +112,7 @@ jobs:
           if ("${{ steps.cache-stt.outputs.cache-hit }}" -eq "true" -and (Test-Path "stt-assets.zip")) {
             $packageArgs += "-SkipSttPackage"
           }
-          $ttsPackageFiles = @(
-            "tts-core-assets.zip",
-            "tts-hf-bert-base-uncased.zip",
-            "tts-hf-bert-base-multilingual-uncased.zip",
-            "tts-hf-bert-base-japanese-v3.zip",
-            "tts-hf-melo-ko.zip",
-            "tts-hf-melo-en.zip",
-            "tts-hf-melo-ja.zip",
-            "tts-hf-melo-zh.zip"
-          )
+          $ttsPackageFiles = Get-ExpectedTtsAssetFiles -Layout $layout
           if ("${{ steps.cache-tts.outputs.cache-hit }}" -eq "true" -and (($ttsPackageFiles | Where-Object { -not (Test-Path $_) }).Count -eq 0)) {
             $packageArgs += "-SkipTtsPackage"
           }
@@ -167,13 +140,6 @@ jobs:
             "python-engine.zip",
             "stt-assets.zip",
             "tts-core-assets.zip",
-            "tts-hf-bert-base-uncased.zip",
-            "tts-hf-bert-base-multilingual-uncased.zip",
-            "tts-hf-bert-base-japanese-v3.zip",
-            "tts-hf-melo-ko.zip",
-            "tts-hf-melo-en.zip",
-            "tts-hf-melo-ja.zip",
-            "tts-hf-melo-zh.zip",
             "hailo-addon.zip",
             "runtime-manifest.json",
             "runtime-manifest.json.sha256",
@@ -186,6 +152,10 @@ jobs:
             }
           }
 
+          Get-ChildItem -Path . -File -Filter "tts-hf-*.zip" | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $env:ARTIFACT_DIR -Force
+          }
+
       - name: Upload to Release
         if: startsWith(github.ref, 'refs/tags/env-v')
         uses: softprops/action-gh-release@v1
@@ -194,13 +164,7 @@ jobs:
             out/python-engine.zip
             out/stt-assets.zip
             out/tts-core-assets.zip
-            out/tts-hf-bert-base-uncased.zip
-            out/tts-hf-bert-base-multilingual-uncased.zip
-            out/tts-hf-bert-base-japanese-v3.zip
-            out/tts-hf-melo-ko.zip
-            out/tts-hf-melo-en.zip
-            out/tts-hf-melo-ja.zip
-            out/tts-hf-melo-zh.zip
+            out/tts-hf-*.zip
             out/hailo-addon.zip
             out/runtime-manifest.json
             out/runtime-manifest.json.sha256

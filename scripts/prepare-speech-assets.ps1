@@ -12,19 +12,64 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "get-runtime-model-layout.ps1")
+$Layout = Get-RuntimeModelLayout
+$SpeechAssetConfig = $Layout.LegacyConfig
+$PiperVoiceFiles = @()
+$SherpaModelFiles = @()
+$TtsHubRepos = @()
+$NltkResources = @()
+$PiperVoiceRepo = $null
+$SherpaRepo = $null
+$SherpaModelSubdir = "vits-mms-tgl"
+
+if ($SpeechAssetConfig) {
+    $PiperVoiceFiles = @($SpeechAssetConfig.tts.piperFiles)
+    $SherpaModelFiles = @($SpeechAssetConfig.tts.sherpaFiles)
+    $TtsHubRepos = @($SpeechAssetConfig.tts.huggingFaceRepos)
+    $NltkResources = @($SpeechAssetConfig.tts.nltkResources)
+    $PiperVoiceRepo = $SpeechAssetConfig.tts.piperVoiceRepo
+    $SherpaRepo = $SpeechAssetConfig.tts.sherpaRepo
+    $SherpaModelSubdir = $SpeechAssetConfig.tts.sherpaModelDir
+}
+
 if (-not $SkipTtsSetup) {
-    Write-Host "Downloading TTS Models..."
+    Write-Host "Preparing TTS model assets..."
     $TtsAssetDir = "tts-assets-package"
     if (Test-Path $TtsAssetDir) { Remove-Item $TtsAssetDir -Recurse -Force }
     $PiperModelDir = Join-Path $TtsAssetDir "piper_models"
-    $SherpaModelDir = Join-Path $TtsAssetDir "sherpa_models\vits-mms-tgl"
+    $SherpaModelDir = Join-Path $TtsAssetDir "sherpa_models\$SherpaModelSubdir"
     New-Item -ItemType Directory -Path $PiperModelDir -Force | Out-Null
     New-Item -ItemType Directory -Path $SherpaModelDir -Force | Out-Null
     New-Item -ItemType Directory -Path "$TtsAssetDir\huggingface\hub" -Force | Out-Null
     New-Item -ItemType Directory -Path "$TtsAssetDir\nltk_data" -Force | Out-Null
 
+    $LocalNltkDir = Join-Path $Layout.LocalTtsCoreRoot "nltk_data"
+    if ($Layout.HasLocalTtsCore) {
+        Write-Host "  -> Using local TTS core folders from runtime-models\\tts\\core"
+        Copy-Item -Path (Join-Path $Layout.LocalTtsCoreRoot "piper_models\*") -Destination $PiperModelDir -Recurse -Force
+        Copy-Item -Path (Join-Path $Layout.LocalTtsCoreRoot "sherpa_models\*") -Destination (Join-Path $TtsAssetDir "sherpa_models") -Recurse -Force
+        $PiperVoiceFiles = @()
+        $SherpaModelFiles = @()
+
+        if (Test-Path $LocalNltkDir) {
+            Copy-Item -Path (Join-Path $LocalNltkDir "*") -Destination "$TtsAssetDir\nltk_data" -Recurse -Force
+            $NltkResources = @()
+        }
+    }
+
+    if ($Layout.HasLocalTtsHfPackages) {
+        Write-Host "  -> Using local HF model folders from runtime-models\\tts\\hf"
+        $TtsHubRepos = @()
+    }
+
+    $PiperVoiceFilesJson = ($PiperVoiceFiles | ConvertTo-Json -Compress)
+    $SherpaModelFilesJson = ($SherpaModelFiles | ConvertTo-Json -Compress)
+    $TtsHubReposJson = ($TtsHubRepos | ConvertTo-Json -Compress -Depth 4)
+    $NltkResourcesJson = ($NltkResources | ConvertTo-Json -Compress)
+
     & $PythonExe -c @"
-import os, shutil, sys
+import json, os, shutil, sys
 try:
     from huggingface_hub import hf_hub_download, snapshot_download
     import nltk
@@ -39,55 +84,31 @@ os.environ['HF_HOME'] = hf_home
 os.environ['HUGGINGFACE_HUB_CACHE'] = hub_cache
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
 
-piper_files = [
-    'vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx',
-    'vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx.json',
-    'es/es_ES/davefx/medium/es_ES-davefx-medium.onnx',
-    'es/es_ES/davefx/medium/es_ES-davefx-medium.onnx.json',
-    'fr/fr_FR/upmc/medium/fr_FR-upmc-medium.onnx',
-    'fr/fr_FR/upmc/medium/fr_FR-upmc-medium.onnx.json'
-]
+piper_files = json.loads(r'''$PiperVoiceFilesJson''')
+sherpa_files = json.loads(r'''$SherpaModelFilesJson''')
+hf_repos = json.loads(r'''$TtsHubReposJson''')
+nltk_resources = json.loads(r'''$NltkResourcesJson''')
 
 print('Downloading Piper models...')
 for fpath in piper_files:
     fname = fpath.split('/')[-1]
     try:
-        hf_hub_download(repo_id='rhasspy/piper-voices', filename=fpath, local_dir=piper_dir, local_dir_use_symlinks=False)
+        hf_hub_download(repo_id=r'''$PiperVoiceRepo''', filename=fpath, local_dir=piper_dir, local_dir_use_symlinks=False)
         print(f' - OK: {fname}')
     except Exception:
         print(f' - FAIL: {fname}')
 
 sherpa_dir = r'$SherpaModelDir'
-sherpa_files = ['tgl/tokens.txt', 'tgl/model.onnx']
 
 print('Downloading Sherpa models...')
 for fpath in sherpa_files:
     fname = fpath.split('/')[-1]
     try:
-        down_path = hf_hub_download(repo_id='willwade/mms-tts-multilingual-models-onnx', filename=fpath)
+        down_path = hf_hub_download(repo_id=r'''$SherpaRepo''', filename=fpath)
         shutil.copy(down_path, os.path.join(sherpa_dir, fname))
         print(f' - OK: {fname}')
     except Exception as e:
         print(f' - FAIL: {fname} ({e})')
-
-hf_repos = [
-    {
-        'repo_id': 'bert-base-uncased',
-        'allow_patterns': ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.txt', 'special_tokens_map.json', 'pytorch_model.bin']
-    },
-    {
-        'repo_id': 'bert-base-multilingual-uncased',
-        'allow_patterns': ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.txt', 'special_tokens_map.json', 'pytorch_model.bin']
-    },
-    {
-        'repo_id': 'tohoku-nlp/bert-base-japanese-v3',
-        'allow_patterns': ['config.json', 'tokenizer.json', 'tokenizer_config.json', 'vocab.txt', 'special_tokens_map.json', 'pytorch_model.bin']
-    },
-    { 'repo_id': 'myshell-ai/MeloTTS-Korean' },
-    { 'repo_id': 'myshell-ai/MeloTTS-English' },
-    { 'repo_id': 'myshell-ai/MeloTTS-Japanese' },
-    { 'repo_id': 'myshell-ai/MeloTTS-Chinese' },
-]
 
 print('Downloading HuggingFace cache for MeloTTS...')
 for repo in hf_repos:
@@ -103,7 +124,7 @@ for repo in hf_repos:
         print(f' - FAIL: {repo_id} ({e})')
 
 print('Downloading NLTK resources...')
-for resource_name in ['averaged_perceptron_tagger_eng', 'cmudict']:
+for resource_name in nltk_resources:
     try:
         nltk.download(resource_name, download_dir=nltk_dir, quiet=True)
         print(f' - OK: {resource_name}')
@@ -115,12 +136,11 @@ for resource_name in ['averaged_perceptron_tagger_eng', 'cmudict']:
 }
 
 if (-not $SkipSttSetup) {
-    Write-Host "Checking NPU STT model assets..."
-    $OpenVinoModelDir = "models\whisper-small-int8-ov"
-    if (Test-Path $OpenVinoModelDir) {
-        Write-Host "  -> Found OpenVINO STT model assets: whisper-small-int8-ov"
+    Write-Host "Checking STT model assets..."
+    if ($Layout.HasLocalStt) {
+        Write-Host "  -> Using local STT folders from runtime-models\\stt"
     } else {
-        Write-Host "Warning: 'models\whisper-small-int8-ov' not found. Skipping OpenVINO model copy."
+        Write-Host "Warning: no STT model source found in runtime-models\\stt."
     }
 } else {
     Write-Host "Skipping STT model setup. Reusing cached STT assets."
