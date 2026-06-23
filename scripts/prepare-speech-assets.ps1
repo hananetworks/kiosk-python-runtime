@@ -31,6 +31,18 @@ function ConvertTo-JsonArrayLiteral {
     return ($items | ConvertTo-Json -Compress -Depth $Depth)
 }
 
+function Write-Utf8NoBomFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Content
+    )
+
+    [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
 $SpeechAssetConfig = $Layout.LegacyConfig
 $PiperVoiceFiles = @()
 $SherpaModelFiles = @()
@@ -84,6 +96,15 @@ if (-not $SkipTtsSetup) {
     $SherpaModelFilesJson = ConvertTo-JsonArrayLiteral -Value $SherpaModelFiles
     $TtsHubReposJson = ConvertTo-JsonArrayLiteral -Value $TtsHubRepos -Depth 4
     $NltkResourcesJson = ConvertTo-JsonArrayLiteral -Value $NltkResources
+    $PiperVoiceFilesJsonPath = Join-Path $TtsAssetDir "_piper_files.json"
+    $SherpaModelFilesJsonPath = Join-Path $TtsAssetDir "_sherpa_files.json"
+    $TtsHubReposJsonPath = Join-Path $TtsAssetDir "_hf_repos.json"
+    $NltkResourcesJsonPath = Join-Path $TtsAssetDir "_nltk_resources.json"
+
+    Write-Utf8NoBomFile -Path $PiperVoiceFilesJsonPath -Content $PiperVoiceFilesJson
+    Write-Utf8NoBomFile -Path $SherpaModelFilesJsonPath -Content $SherpaModelFilesJson
+    Write-Utf8NoBomFile -Path $TtsHubReposJsonPath -Content $TtsHubReposJson
+    Write-Utf8NoBomFile -Path $NltkResourcesJsonPath -Content $NltkResourcesJson
 
     & $PythonExe -c @"
 import json, os, shutil, sys
@@ -101,10 +122,14 @@ os.environ['HF_HOME'] = hf_home
 os.environ['HUGGINGFACE_HUB_CACHE'] = hub_cache
 os.environ['HF_HUB_DISABLE_TELEMETRY'] = '1'
 
-piper_files = json.loads(r'''$PiperVoiceFilesJson''')
-sherpa_files = json.loads(r'''$SherpaModelFilesJson''')
-hf_repos = json.loads(r'''$TtsHubReposJson''')
-nltk_resources = json.loads(r'''$NltkResourcesJson''')
+with open(r'$PiperVoiceFilesJsonPath', 'r', encoding='utf-8') as fp:
+    piper_files = json.load(fp)
+with open(r'$SherpaModelFilesJsonPath', 'r', encoding='utf-8') as fp:
+    sherpa_files = json.load(fp)
+with open(r'$TtsHubReposJsonPath', 'r', encoding='utf-8') as fp:
+    hf_repos = json.load(fp)
+with open(r'$NltkResourcesJsonPath', 'r', encoding='utf-8') as fp:
+    nltk_resources = json.load(fp)
 
 print('Downloading Piper models...')
 for fpath in piper_files:
