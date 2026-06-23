@@ -14,6 +14,23 @@ $ErrorActionPreference = "Stop"
 
 . (Join-Path $PSScriptRoot "get-runtime-model-layout.ps1")
 $Layout = Get-RuntimeModelLayout
+
+function ConvertTo-JsonArrayLiteral {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Value,
+
+        [int]$Depth = 2
+    )
+
+    $items = @($Value)
+    if ($items.Count -eq 0) {
+        return "[]"
+    }
+
+    return ($items | ConvertTo-Json -Compress -Depth $Depth)
+}
+
 $SpeechAssetConfig = $Layout.LegacyConfig
 $PiperVoiceFiles = @()
 $SherpaModelFiles = @()
@@ -63,10 +80,10 @@ if (-not $SkipTtsSetup) {
         $TtsHubRepos = @()
     }
 
-    $PiperVoiceFilesJson = ($PiperVoiceFiles | ConvertTo-Json -Compress)
-    $SherpaModelFilesJson = ($SherpaModelFiles | ConvertTo-Json -Compress)
-    $TtsHubReposJson = ($TtsHubRepos | ConvertTo-Json -Compress -Depth 4)
-    $NltkResourcesJson = ($NltkResources | ConvertTo-Json -Compress)
+    $PiperVoiceFilesJson = ConvertTo-JsonArrayLiteral -Value $PiperVoiceFiles
+    $SherpaModelFilesJson = ConvertTo-JsonArrayLiteral -Value $SherpaModelFiles
+    $TtsHubReposJson = ConvertTo-JsonArrayLiteral -Value $TtsHubRepos -Depth 4
+    $NltkResourcesJson = ConvertTo-JsonArrayLiteral -Value $NltkResources
 
     & $PythonExe -c @"
 import json, os, shutil, sys
