@@ -70,6 +70,23 @@
         ]
       },
       {
+        "key": "ttsBertKorBase",
+        "repo_id": "kykim/bert-kor-base",
+        "zipFile": "tts-hf-bert-kor-base.zip",
+        "versionField": "ttsBertKorBaseVersion",
+        "cacheDirs": [
+          "models--kykim--bert-kor-base"
+        ],
+        "allow_patterns": [
+          "config.json",
+          "tokenizer.json",
+          "tokenizer_config.json",
+          "vocab.txt",
+          "special_tokens_map.json",
+          "pytorch_model.bin"
+        ]
+      },
+      {
         "key": "ttsMeloKo",
         "repo_id": "myshell-ai/MeloTTS-Korean",
         "zipFile": "tts-hf-melo-ko.zip",
